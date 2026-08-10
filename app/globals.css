@@ -32,6 +32,20 @@ body {
   font-family: "Microsoft YaHei", "Noto Sans SC", "PingFang SC", SimSun, sans-serif;
 }
 
+.form-control {
+  width: 100%;
+  border: 1px solid rgb(51 65 85);
+  border-radius: 0.75rem;
+  background: rgb(2 6 23 / 0.8);
+  padding: 0.75rem 0.9rem;
+  color: rgb(241 245 249);
+  outline: none;
+}
+
+.form-control:focus {
+  border-color: rgb(167 139 250);
+}
+
 /* Smooth scrolling for chat panels */
 html {
   scroll-behavior: smooth;
