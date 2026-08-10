@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { speakKorean } from "@/utils/speech";
+
 type Mode =
   | "auto"
   | "vi-ko"
@@ -91,6 +93,8 @@ export default function AiTranslate() {
   const [loading, setLoading] =
     useState(false);
 
+  const [error, setError] = useState("");
+
   const [result, setResult] =
     useState<TranslateResult | null>(
       null
@@ -104,15 +108,13 @@ export default function AiTranslate() {
 
   async function translate() {
     if (!text.trim()) {
-      alert(
-        "Hãy nhập câu cần dịch hoặc sửa."
-      );
-
+      setError("Hãy nhập câu cần dịch hoặc sửa.");
       return;
     }
 
     setLoading(true);
     setResult(null);
+    setError("");
 
     try {
       const response =
@@ -150,7 +152,7 @@ export default function AiTranslate() {
         !response.ok ||
         !data.ok
       ) {
-        alert(
+        setError(
           data.error ||
             "Không dịch được câu."
         );
@@ -159,12 +161,12 @@ export default function AiTranslate() {
       }
 
       setResult(data);
-    } catch (error) {
+    } catch (err) {
       console.error(
-        error
+        err
       );
 
-      alert(
+      setError(
         "Không kết nối được Gemini."
       );
     } finally {
@@ -181,30 +183,7 @@ export default function AiTranslate() {
   function speak(
     value: string
   ) {
-    if (!value.trim()) {
-      return;
-    }
-
-    window
-      .speechSynthesis
-      .cancel();
-
-    const utterance =
-      new SpeechSynthesisUtterance(
-        value
-      );
-
-    utterance.lang =
-      "ko-KR";
-
-    utterance.rate =
-      0.9;
-
-    window
-      .speechSynthesis
-      .speak(
-        utterance
-      );
+    speakKorean(value, { rate: 0.9 });
   }
 
   /*
@@ -550,6 +529,12 @@ export default function AiTranslate() {
               : "✨ Dịch bằng Gemini"}
         </button>
 
+        {error && (
+          <p className="mt-4 rounded-xl border border-rose-900/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
+            {error}
+          </p>
+        )}
+
       </div>
 
       {/* =====================================
@@ -623,7 +608,7 @@ export default function AiTranslate() {
                   ✨ Kết quả chính
                 </p>
 
-                <p className="mt-3 whitespace-pre-line break-words text-3xl font-bold leading-relaxed">
+                <p className="mt-3 whitespace-pre-line break-words text-3xl font-bold leading-relaxed korean-text">
                   {
                     result.mainTranslation
                   }

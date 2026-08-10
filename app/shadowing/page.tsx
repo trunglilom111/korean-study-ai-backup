@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/AppShell";
 import { createClient } from "@/utils/supabase/client";
+import { parseMediaUrl, type MediaSource } from "@/utils/media-url";
+import { preloadSpeechVoices, speakKorean } from "@/utils/speech";
 
 type Level = "sơ cấp" | "trung cấp" | "cao cấp";
 
@@ -28,8 +30,17 @@ type ShadowingResponse = {
   description?: string;
   level?: string;
   sentences?: ShadowingSentence[];
+  source?: {
+    url: string;
+    type: string;
+    title?: string;
+    author?: string;
+    embedUrl?: string | null;
+  };
   error?: string;
 };
+
+type ShadowingMode = "topic" | "link";
 
 const samples: ShadowingSentence[] = [
   {
@@ -67,11 +78,24 @@ const topicSuggestions = [
   "Nói chuyện với bạn bè",
 ];
 
+const LINK_EXAMPLES = [
+  "https://www.youtube.com/watch?v=...",
+  "https://youtu.be/...",
+  "https://vimeo.com/...",
+];
+
 export default function ShadowingPage() {
   const router = useRouter();
   const [supabase] = useState(() => createClient());
   const [authReady, setAuthReady] = useState(false);
+  const [mode, setMode] = useState<ShadowingMode>("topic");
   const [topic, setTopic] = useState("");
+  const [mediaUrl, setMediaUrl] = useState("");
+  const [transcript, setTranscript] = useState("");
+  const [parsedMedia, setParsedMedia] = useState<MediaSource | null>(null);
+  const [videoMeta, setVideoMeta] = useState<{ title: string; author: string } | null>(
+    null
+  );
   const [level, setLevel] = useState<Level>("sơ cấp");
   const [count, setCount] = useState(5);
   const [lesson, setLesson] = useState<ShadowingLesson | null>(null);
@@ -112,11 +136,18 @@ export default function ShadowingPage() {
   }, [router, supabase]);
 
   useEffect(() => {
+    preloadSpeechVoices();
+
     return () => {
       playbackId.current += 1;
       window.speechSynthesis.cancel();
     };
   }, []);
+
+  useEffect(() => {
+    const parsed = parseMediaUrl(mediaUrl);
+    setParsedMedia(parsed);
+  }, [mediaUrl]);
 
   const sentences =
     lesson && lesson.sentences.length > 0
@@ -156,7 +187,7 @@ export default function ShadowingPage() {
 
   function speakSentence(sentence: ShadowingSentence) {
     stopPlayback();
-    window.speechSynthesis.speak(makeUtterance(sentence.korean));
+    speakKorean(sentence.korean, { rate: speed });
   }
 
   function playAll(startIndex = activeIndex) {
@@ -195,6 +226,28 @@ export default function ShadowingPage() {
     playNext(startIndex);
   }
 
+  function applyLesson(data: ShadowingResponse) {
+    if (!data.sentences || data.sentences.length === 0) {
+      setError("AI chưa tạo được câu luyện. Hãy thử lại.");
+      return;
+    }
+
+    if (data.source?.title) {
+      setVideoMeta({
+        title: data.source.title,
+        author: data.source.author || "",
+      });
+    }
+
+    setLesson({
+      title: data.title || "Bài shadowing mới",
+      description: data.description || "Luyện nghe và nhại theo từng câu.",
+      level: data.level || level,
+      sentences: data.sentences,
+    });
+    setActiveIndex(0);
+  }
+
   async function generateLesson() {
     if (!topic.trim()) {
       setError("Hãy nhập chủ đề muốn luyện.");
@@ -225,18 +278,51 @@ export default function ShadowingPage() {
         return;
       }
 
-      if (!data.sentences || data.sentences.length === 0) {
-        setError("AI chưa tạo được câu luyện. Hãy thử lại với chủ đề khác.");
+      applyLesson(data);
+    } catch (requestError) {
+      console.error(requestError);
+      setError("Không kết nối được AI. Hãy thử lại sau.");
+    } finally {
+      setGenerating(false);
+    }
+  }
+
+  async function generateFromLink() {
+    if (!mediaUrl.trim()) {
+      setError("Hãy dán link YouTube, Vimeo hoặc file audio/video.");
+      return;
+    }
+
+    if (!parsedMedia) {
+      setError("Link không hợp lệ. Hãy thử link YouTube hoặc Vimeo.");
+      return;
+    }
+
+    stopPlayback();
+    setGenerating(true);
+    setError("");
+
+    try {
+      const response = await fetch("/api/ai/shadowing/from-url", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: mediaUrl.trim(),
+          transcript: transcript.trim(),
+          level,
+        }),
+      });
+
+      const data = (await response.json()) as ShadowingResponse;
+
+      if (!response.ok || !data.ok) {
+        setError(data.error || "Không thể tạo bài từ link.");
         return;
       }
 
-      setLesson({
-        title: data.title || "Bài shadowing mới",
-        description: data.description || "Luyện nghe và nhại theo từng câu.",
-        level: data.level || level,
-        sentences: data.sentences,
-      });
-      setActiveIndex(0);
+      applyLesson(data);
     } catch (requestError) {
       console.error(requestError);
       setError("Không kết nối được AI. Hãy thử lại sau.");
@@ -279,11 +365,139 @@ export default function ShadowingPage() {
         <p className="text-slate-400">쉐도잉</p>
         <h1 className="text-3xl font-bold md:text-4xl">🎧 Shadowing</h1>
         <p className="mt-2 max-w-2xl text-slate-500">
-          Nghe, nhại lại và luyện nhịp nói như người Hàn qua những bài ngắn
-          theo đúng chủ đề bạn cần.
+          Nghe, nhại lại và luyện nhịp nói như người Hàn — từ chủ đề AI hoặc
+          video YouTube/Vimeo.
         </p>
       </div>
 
+      <div className="mb-6 flex flex-wrap gap-2">
+        <button
+          type="button"
+          onClick={() => {
+            setMode("topic");
+            setError("");
+          }}
+          className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+            mode === "topic"
+              ? "bg-white text-black"
+              : "bg-slate-900 text-slate-400 hover:bg-slate-800"
+          }`}
+        >
+          ✨ Theo chủ đề
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setMode("link");
+            setError("");
+          }}
+          className={`rounded-2xl px-4 py-3 text-sm font-semibold transition ${
+            mode === "link"
+              ? "bg-white text-black"
+              : "bg-slate-900 text-slate-400 hover:bg-slate-800"
+          }`}
+        >
+          🔗 Từ link video
+        </button>
+      </div>
+
+      {mode === "link" && (
+        <section className="mb-6 rounded-3xl border border-slate-800 bg-slate-900 p-5 md:p-7">
+          <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+            <div>
+              <p className="text-sm text-slate-500">🔗 Shadowing từ video</p>
+              <h2 className="mt-1 text-xl font-bold">
+                Dán link YouTube / Vimeo
+              </h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-400">
+                Xem video gốc, dán phụ đề (nếu có) và AI sẽ tách thành bài
+                shadowing từng câu.
+              </p>
+            </div>
+            <span className="w-fit rounded-full bg-slate-800 px-3 py-1 text-xs text-slate-300">
+              YouTube · Vimeo · MP4
+            </span>
+          </div>
+
+          <input
+            value={mediaUrl}
+            onChange={(event) => setMediaUrl(event.target.value)}
+            placeholder="https://www.youtube.com/watch?v=..."
+            className="mt-5 w-full rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none focus:border-slate-500"
+          />
+
+          <p className="mt-2 text-xs text-slate-600">
+            Hỗ trợ: {LINK_EXAMPLES.join(" · ")}
+          </p>
+
+          {parsedMedia &&
+            (parsedMedia.type === "youtube" || parsedMedia.type === "vimeo") && (
+              <div className="mt-5 overflow-hidden rounded-2xl border border-slate-800 bg-black">
+                <div className="relative aspect-video w-full">
+                  <iframe
+                    src={parsedMedia.embedUrl}
+                    title="Video shadowing"
+                    className="absolute inset-0 h-full w-full"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                    allowFullScreen
+                  />
+                </div>
+                {videoMeta?.title && (
+                  <p className="border-t border-slate-800 px-4 py-3 text-sm text-slate-400">
+                    📺 {videoMeta.title}
+                    {videoMeta.author ? ` · ${videoMeta.author}` : ""}
+                  </p>
+                )}
+              </div>
+            )}
+
+          {parsedMedia?.type === "direct" && (
+            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-800 bg-black">
+              <video
+                src={parsedMedia.url}
+                controls
+                className="w-full"
+              />
+            </div>
+          )}
+
+          <label className="mt-5 mb-2 block text-sm text-slate-400">
+            Phụ đề / transcript (tuỳ chọn — càng chính xác càng tốt)
+          </label>
+          <textarea
+            value={transcript}
+            onChange={(event) => setTranscript(event.target.value)}
+            rows={5}
+            placeholder="Dán phụ đề tiếng Hàn từ video vào đây. Nếu bỏ trống, AI sẽ tạo câu luyện theo chủ đề video."
+            className="w-full resize-none rounded-2xl border border-slate-700 bg-slate-950 p-4 leading-7 outline-none focus:border-slate-500"
+          />
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-[160px_1fr]">
+            <select
+              value={level}
+              onChange={(event) => setLevel(event.target.value as Level)}
+              className="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none"
+            >
+              <option value="sơ cấp">🌱 Sơ cấp</option>
+              <option value="trung cấp">🌿 Trung cấp</option>
+              <option value="cao cấp">🌳 Cao cấp</option>
+            </select>
+
+            <button
+              type="button"
+              onClick={generateFromLink}
+              disabled={generating || !parsedMedia}
+              className="rounded-2xl bg-white py-4 font-bold text-black transition hover:bg-slate-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {generating
+                ? "✨ AI đang phân tích video..."
+                : "✨ Tạo bài shadowing từ link"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {mode === "topic" && (
       <section className="mb-6 rounded-3xl border border-slate-800 bg-slate-900 p-5 md:p-7">
         <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
           <div>
@@ -345,7 +559,7 @@ export default function ShadowingPage() {
           ))}
         </div>
 
-        {error && (
+        {error && mode === "topic" && (
           <p className="mt-4 rounded-xl border border-rose-900/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
             {error}
           </p>
@@ -360,6 +574,13 @@ export default function ShadowingPage() {
           {generating ? "✨ AI đang tạo bài..." : "✨ Tạo bài shadowing"}
         </button>
       </section>
+      )}
+
+      {error && (
+        <p className="mb-6 rounded-xl border border-rose-900/60 bg-rose-950/40 px-4 py-3 text-sm text-rose-200">
+          {error}
+        </p>
+      )}
 
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5 md:p-8">
         <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
@@ -400,7 +621,7 @@ export default function ShadowingPage() {
           <p className="text-sm text-slate-500">
             Câu {Math.min(activeIndex + 1, sentences.length)} / {sentences.length}
           </p>
-          <p className="mt-4 break-words text-3xl font-bold leading-relaxed md:text-4xl">
+          <p className="mt-4 break-words text-3xl font-bold leading-relaxed korean-text md:text-4xl">
             {currentSentence.korean}
           </p>
 
