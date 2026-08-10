@@ -47,7 +47,10 @@ export async function POST(request: Request) {
 
     if (!user) {
       return NextResponse.json(
-        { ok: false, error: "Bạn cần đăng nhập để tạo từ vựng bằng AI." },
+        {
+          ok: false,
+          error: "Bạn cần đăng nhập để tạo từ vựng bằng AI.",
+        },
         { status: 401 }
       );
     }
@@ -56,42 +59,65 @@ export async function POST(request: Request) {
 
     if (!apiKey) {
       return NextResponse.json(
-        { ok: false, error: "Thiếu GEMINI_API_KEY trong .env.local." },
+        {
+          ok: false,
+          error: "Thiếu GEMINI_API_KEY trong .env.local.",
+        },
         { status: 500 }
       );
     }
 
     const rawBody: unknown = await request.json();
-    const body = rawBody && typeof rawBody === "object"
-      ? (rawBody as Record<string, unknown>)
-      : {};
+
+    const body =
+      rawBody && typeof rawBody === "object"
+        ? (rawBody as Record<string, unknown>)
+        : {};
+
     const requestedLevel = stringValue(body.level);
+
     const level = ["HSK 1", "HSK 2", "HSK 3"].includes(requestedLevel)
       ? requestedLevel
       : "HSK 1";
+
     const topic = stringValue(body.topic).slice(0, 180);
+
     const requestedCount = Number(body.count);
+
     const count = Math.min(
-      Math.max(Number.isFinite(requestedCount) ? requestedCount : 20, 8),
+      Math.max(
+        Number.isFinite(requestedCount) ? requestedCount : 20,
+        8
+      ),
       30
     );
 
-    const ai = new GoogleGenAI({ apiKey });
+    const ai = new GoogleGenAI({
+      apiKey,
+    });
+
     const prompt = `
 Bạn là giáo viên tiếng Trung phổ thông (Mandarin) cho người Việt.
 
 Tạo ${count} từ vựng/cụm từ tiếng Trung GIẢN THỂ mới để người học luyện theo định hướng ${level}.
 
-CHỦ ĐỀ: ${topic || "giao tiếp và đời sống hằng ngày"}
+CHỦ ĐỀ:
+${topic || "giao tiếp và đời sống hằng ngày"}
 
 YÊU CẦU:
+
 - Đây là bộ từ luyện theo định hướng trình độ, không được tuyên bố là danh sách HSK chính thức.
-- Dùng chữ Hán giản thể, pinyin có đầy đủ dấu thanh và nghĩa tiếng Việt tự nhiên.
-- Không lặp từ; ưu tiên từ phổ biến, dùng được trong câu nói hằng ngày.
+- Dùng chữ Hán giản thể.
+- Pinyin phải có đầy đủ dấu thanh.
+- Nghĩa tiếng Việt phải tự nhiên, dễ hiểu.
+- Không lặp từ.
+- Ưu tiên từ phổ biến, có thể sử dụng trong giao tiếp hằng ngày.
 - Ví dụ tiếng Trung phải ngắn, đúng ngữ pháp và phù hợp với trình độ đã chọn.
-- examplePinyin phải là pinyin của ví dụ, có dấu thanh.
-- memoryTip ngắn gọn bằng tiếng Việt.
-- Không dùng nội dung có bản quyền hoặc trích dẫn nguồn.
+- examplePinyin phải là pinyin chính xác của exampleChinese và có đầy đủ dấu thanh.
+- exampleVietnamese phải dịch đúng câu ví dụ.
+- memoryTip phải ngắn gọn bằng tiếng Việt và giúp người học dễ nhớ từ.
+- Không sử dụng nội dung có bản quyền hoặc trích dẫn nguồn.
+- Chỉ trả về dữ liệu đúng theo JSON schema được cung cấp.
 `;
 
     const interaction = await ai.interactions.create({
@@ -109,16 +135,27 @@ YÊU CẦU:
       throw new Error("Gemini không trả về từ vựng.");
     }
 
-    const result = JSON.parse(interaction.output_text) as unknown;
+    // Parse JSON và khai báo đúng kiểu để TypeScript
+    // cho phép dùng spread operator (...)
+    const result = JSON.parse(
+      interaction.output_text
+    ) as Record<string, unknown>;
 
-    return NextResponse.json({ ok: true, provider: "Gemini", ...result });
+    return NextResponse.json({
+      ok: true,
+      provider: "Gemini",
+      ...result,
+    });
   } catch (error: unknown) {
     console.error("AI CHINESE VOCABULARY ERROR:", error);
 
     return NextResponse.json(
       {
         ok: false,
-        error: error instanceof Error ? error.message : "Không thể tạo từ vựng lúc này.",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Không thể tạo từ vựng lúc này.",
       },
       { status: 500 }
     );
