@@ -58,6 +58,11 @@ const menu = [
     icon: "🤖",
     name: "AI Tutor",
   },
+  {
+    href: "/chinese",
+    icon: "CN",
+    name: "Tiếng Trung",
+  },
 ];
 
 export default function AppShell({

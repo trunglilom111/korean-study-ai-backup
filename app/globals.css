@@ -25,6 +25,13 @@ body {
   font-family: var(--font-korean), "Malgun Gothic", sans-serif;
 }
 
+/* Prefer a CJK-capable font when rendering Simplified Chinese lessons. */
+:lang(zh),
+[lang="zh"],
+.chinese-text {
+  font-family: "Microsoft YaHei", "Noto Sans SC", "PingFang SC", SimSun, sans-serif;
+}
+
 /* Smooth scrolling for chat panels */
 html {
   scroll-behavior: smooth;
