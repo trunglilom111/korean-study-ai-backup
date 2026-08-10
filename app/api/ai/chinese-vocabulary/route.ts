@@ -76,7 +76,7 @@ export async function POST(request: Request) {
 
     const requestedLevel = stringValue(body.level);
 
-    const level = ["HSK 1", "HSK 2", "HSK 3"].includes(requestedLevel)
+    const level = ["HSK 1", "HSK 2", "HSK 3", "HSK 4"].includes(requestedLevel)
       ? requestedLevel
       : "HSK 1";
 

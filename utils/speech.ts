@@ -1,19 +1,36 @@
-export function getKoreanVoice(): SpeechSynthesisVoice | undefined {
+export function getKoreanVoices(): SpeechSynthesisVoice[] {
   if (typeof window === "undefined") {
-    return undefined;
+    return [];
   }
 
-  const voices = window.speechSynthesis.getVoices();
+  return window.speechSynthesis
+    .getVoices()
+    .filter(
+      (voice) =>
+        voice.lang.toLowerCase().startsWith("ko") ||
+        /korean|hangul|한국/i.test(voice.name)
+    );
+}
+
+export function getKoreanVoice(voiceName?: string): SpeechSynthesisVoice | undefined {
+  const voices = getKoreanVoices();
 
   return (
-    voices.find((voice) => voice.lang.toLowerCase().startsWith("ko")) ||
-    voices.find((voice) => /korean|hangul|한국/i.test(voice.name))
+    voices.find((voice) => voice.name === voiceName) ||
+    voices.find((voice) => voice.default) ||
+    voices[0]
   );
 }
 
 export function speakKorean(
   text: string,
-  options?: { rate?: number; onEnd?: () => void; onError?: () => void }
+  options?: {
+    rate?: number;
+    pitch?: number;
+    voiceName?: string;
+    onEnd?: () => void;
+    onError?: () => void;
+  }
 ): () => void {
   if (typeof window === "undefined" || !text.trim()) {
     return () => undefined;
@@ -22,10 +39,11 @@ export function speakKorean(
   window.speechSynthesis.cancel();
 
   const utterance = new SpeechSynthesisUtterance(text.trim());
-  const koreanVoice = getKoreanVoice();
+  const koreanVoice = getKoreanVoice(options?.voiceName);
 
   utterance.lang = "ko-KR";
   utterance.rate = options?.rate ?? 0.9;
+  utterance.pitch = options?.pitch ?? 1;
 
   if (koreanVoice) {
     utterance.voice = koreanVoice;

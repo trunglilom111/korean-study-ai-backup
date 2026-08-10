@@ -1,36 +1,32 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Korean Study AI · Mandarin Path
 
-## Getting Started
+Ứng dụng học tiếng Hàn và tiếng Trung, gồm phòng luyện TOPIK có nghe/đọc/viết và lộ trình Mandarin từ pinyin đến mục tiêu HSK 3–4.
 
-First, run the development server:
+## Chạy dự án
 
 ```bash
+npm install
+copy .env.example .env.local
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Mở [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Cấu hình Gemini
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Tạo một API key Gemini trong tài khoản Google AI Studio của bạn, sau đó dán vào `GEMINI_API_KEY` trong `.env.local`.
 
-## Learn More
+```env
+GEMINI_API_KEY=your-private-key
+```
 
-To learn more about Next.js, take a look at the following resources:
+Một khóa Gemini dùng chung cho hai tính năng AI:
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `/chinese`: tạo bộ từ theo HSK 1–4, chủ đề tự chọn, có pinyin, ví dụ và mẹo nhớ.
+- `/topik`: tạo đề luyện TOPIK I/II mới theo kỹ năng, độ khó và chủ đề.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Khóa chỉ được dùng ở Route Handler phía máy chủ; không đặt tiền tố `NEXT_PUBLIC_` và không dán khóa vào mã nguồn hoặc commit Git. Các tính năng tạo học liệu AI yêu cầu đăng nhập Supabase.
 
-## Deploy on Vercel
+## Âm thanh TOPIK
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Mở trang `/topik`, dùng **Phòng âm thanh TOPIK** để chọn giọng tiếng Hàn và tốc độ phát. Danh sách giọng do Windows/trình duyệt cung cấp. Nếu không thấy giọng Hàn, cài thêm Korean speech trong cài đặt hệ điều hành rồi tải lại trang.

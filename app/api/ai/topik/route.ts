@@ -106,7 +106,7 @@ export async function POST(request: Request) {
     const requestedCount = Number(body.questionCount);
     const questionCount = Math.min(
       Math.max(Number.isFinite(requestedCount) ? requestedCount : 8, 4),
-      16
+      30
     );
 
     if (target === "TOPIK I" && skill === "writing") {
@@ -143,6 +143,7 @@ YÊU CẦU NỘI DUNG:
 - Mọi câu đều cần id duy nhất (ví dụ q1), number tăng dần, points hợp lý, giải thích tiếng Việt.
 - Dùng tiếng Hàn tự nhiên, không đưa tên thương hiệu hoặc trích dẫn nguồn.
 - estimatedMinutes phản ánh thời gian hợp lý cho số câu, tối thiểu 10 phút.
+- Với đề từ 20 câu trở lên, hãy phân bố câu hỏi rõ ràng theo kỹ năng đã chọn, đa dạng dạng hỏi và không lặp lại tình huống hoặc đáp án.
 `;
 
     const interaction = await ai.interactions.create({

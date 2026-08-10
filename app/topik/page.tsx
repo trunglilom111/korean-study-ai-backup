@@ -4,10 +4,11 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import { createClient } from "@/utils/supabase/client";
-import { speakKorean } from "@/utils/speech";
+import { getKoreanVoices, speakKorean } from "@/utils/speech";
 
 type Skill = "listening" | "reading" | "writing";
 type Workspace = "library" | "ai" | "strategy";
+type ExamMode = "practice" | "timed";
 
 type ExamQuestion = {
   id: string;
@@ -57,6 +58,17 @@ const skillInfo: Record<Skill, { label: string; icon: string; color: string }> =
   reading: { label: "Đọc", icon: "02", color: "text-emerald-300 bg-emerald-400/10 border-emerald-400/25" },
   writing: { label: "Viết", icon: "03", color: "text-violet-300 bg-violet-400/10 border-violet-400/25" },
 };
+
+const topikFormat = {
+  "TOPIK I": "Nghe → Đọc · luyện theo luồng làm bài trên máy",
+  "TOPIK II": "Nghe → Viết → Đọc · có quản lý thời gian và bảng đáp án",
+};
+
+function formatRemainingTime(totalSeconds: number) {
+  const minutes = Math.floor(totalSeconds / 60).toString().padStart(2, "0");
+  const seconds = (totalSeconds % 60).toString().padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
 
 const practiceLibrary: PracticeExam[] = [
   {
@@ -389,6 +401,104 @@ const practiceLibrary: PracticeExam[] = [
       },
     ],
   },
+  {
+    id: "topik-1-work-03",
+    title: "Đề mô phỏng 03 · Công việc và lịch hẹn",
+    subtitle: "Mini test mới: thời gian, thông báo và phản hồi ngắn",
+    target: "TOPIK I",
+    level: "Cấp 1–2",
+    estimatedMinutes: 10,
+    source: "library",
+    sections: [
+      {
+        skill: "listening",
+        title: "듣기 · Nghe hiểu",
+        instructions: "Nghe hội thoại và chọn thông tin đúng nhất.",
+        questions: [
+          {
+            id: "i3-q1",
+            number: 1,
+            audioText: "여자: 내일 회의는 몇 시에 시작해요? 남자: 원래 아홉 시였는데 열 시로 바뀌었어요.",
+            supportText: "",
+            prompt: "회의는 언제 시작합니까?",
+            options: ["아침 여덟 시", "아침 아홉 시", "아침 열 시", "오후 열 시"],
+            answer: "아침 열 시",
+            explanation: "Cuộc họp ban đầu lúc 9 giờ nhưng đã đổi sang 10 giờ sáng.",
+            writingGuide: [],
+            points: 2,
+          },
+        ],
+      },
+      {
+        skill: "reading",
+        title: "읽기 · Đọc hiểu",
+        instructions: "Đọc thông báo và chọn câu đúng.",
+        questions: [
+          {
+            id: "i3-q2",
+            number: 2,
+            audioText: "",
+            supportText: "[안내] 오늘 도서관은 오후 6시에 문을 닫습니다. 책을 빌리고 싶은 분은 5시 30분까지 와 주세요.",
+            prompt: "안내 내용과 같은 것을 고르십시오.",
+            options: ["도서관은 오늘 쉽니다.", "책은 오후 6시까지 빌릴 수 있습니다.", "책을 빌리려면 5시 30분 전에 와야 합니다.", "도서관은 오후 5시에 문을 닫습니다."],
+            answer: "책을 빌리려면 5시 30분 전에 와야 합니다.",
+            explanation: "Thư viện đóng cửa lúc 6 giờ, nhưng phải đến trước 5 giờ 30 để mượn sách.",
+            writingGuide: [],
+            points: 2,
+          },
+        ],
+      },
+    ],
+  },
+  {
+    id: "topik-2-city-03",
+    title: "Đề mô phỏng 03 · Thành phố bền vững",
+    subtitle: "Mini test mới: ý chính bài đọc và lập luận ngắn",
+    target: "TOPIK II",
+    level: "Cấp 3–4",
+    estimatedMinutes: 14,
+    source: "library",
+    sections: [
+      {
+        skill: "reading",
+        title: "읽기 · Đọc hiểu",
+        instructions: "Đọc đoạn văn và chọn ý chính phù hợp nhất.",
+        questions: [
+          {
+            id: "ii3-q1",
+            number: 1,
+            audioText: "",
+            supportText: "도시의 공원을 늘리는 일은 단순히 쉴 곳을 만드는 것 이상의 의미가 있다. 공원은 여름철 열기를 줄이고 주민들이 운동하거나 이웃과 만나는 공간이 되기 때문이다. 따라서 공원 계획을 세울 때에는 면적뿐 아니라 사람들이 쉽게 찾아갈 수 있는지도 함께 고려해야 한다.",
+            prompt: "글의 중심 생각으로 가장 알맞은 것을 고르십시오.",
+            options: ["공원은 넓을수록 항상 좋다.", "공원은 환경과 주민 생활을 함께 고려해 계획해야 한다.", "공원에서는 운동만 해야 한다.", "도시에는 공원이 필요하지 않다."],
+            answer: "공원은 환경과 주민 생활을 함께 고려해 계획해야 한다.",
+            explanation: "Đoạn văn nêu lợi ích môi trường lẫn đời sống cộng đồng, và nhấn mạnh việc quy hoạch phải dễ tiếp cận.",
+            writingGuide: [],
+            points: 4,
+          },
+        ],
+      },
+      {
+        skill: "writing",
+        title: "쓰기 · Viết",
+        instructions: "Viết ý kiến ngắn có nêu quan điểm và ít nhất một lý do cụ thể.",
+        questions: [
+          {
+            id: "ii3-q2",
+            number: 2,
+            audioText: "",
+            supportText: "",
+            prompt: "‘우리 동네에 공원이 더 필요하다’에 대한 자신의 생각을 4~6문장으로 쓰십시오.",
+            options: [],
+            answer: "저는 우리 동네에 공원이 더 필요하다고 생각합니다. 공원이 있으면 사람들이 가까운 곳에서 운동할 수 있습니다. 또한 아이들과 어른들이 함께 쉴 공간도 생깁니다. 그래서 공원을 늘리고 잘 관리해야 합니다.",
+            explanation: "Bài mẫu đi theo khung: quan điểm → hai lợi ích cụ thể → kết luận/đề xuất.",
+            writingGuide: ["Mở đầu bằng -다고 생각하다 để nêu quan điểm.", "Nêu ít nhất một lợi ích cụ thể cho cư dân.", "Dùng liên kết như 또한, 그래서 hoặc -기 때문에.", "Viết đủ 4–6 câu và kiểm tra cách nhau giữa từ."],
+            points: 10,
+          },
+        ],
+      },
+    ],
+  },
 ];
 
 function getAllQuestions(exam: PracticeExam | null) {
@@ -408,6 +518,8 @@ export default function TopikPage() {
   const [authReady, setAuthReady] = useState(false);
   const [workspace, setWorkspace] = useState<Workspace>("library");
   const [activeExam, setActiveExam] = useState<PracticeExam | null>(null);
+  const [examMode, setExamMode] = useState<ExamMode>("practice");
+  const [remainingSeconds, setRemainingSeconds] = useState<number | null>(null);
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
@@ -418,6 +530,9 @@ export default function TopikPage() {
   const [aiCount, setAiCount] = useState(8);
   const [generating, setGenerating] = useState(false);
   const [generationError, setGenerationError] = useState("");
+  const [koreanVoices, setKoreanVoices] = useState<SpeechSynthesisVoice[]>([]);
+  const [voiceName, setVoiceName] = useState("");
+  const [speechRate, setSpeechRate] = useState(0.85);
 
   useEffect(() => {
     let cancelled = false;
@@ -457,6 +572,18 @@ export default function TopikPage() {
     };
   }, [router, supabase]);
 
+  useEffect(() => {
+    function loadVoices() {
+      const availableVoices = getKoreanVoices();
+      setKoreanVoices(availableVoices);
+      setVoiceName((currentName) => currentName || availableVoices.find((voice) => voice.default)?.name || availableVoices[0]?.name || "");
+    }
+
+    loadVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+  }, []);
+
   const questions = useMemo(() => getAllQuestions(activeExam), [activeExam]);
   const current = questions[questionIndex];
   const scoredQuestions = questions.filter(({ question }) => question.options.length > 0);
@@ -467,13 +594,43 @@ export default function TopikPage() {
   const scorePercent = scoredQuestions.length
     ? Math.round((correctCount / scoredQuestions.length) * 100)
     : 0;
+
+  useEffect(() => {
+    if (!activeExam || submitted || examMode !== "timed" || remainingSeconds === null) return;
+    if (remainingSeconds <= 0) return;
+
+    const timer = window.setInterval(() => {
+      setRemainingSeconds((currentSeconds) => {
+        if (currentSeconds === null) return null;
+        if (currentSeconds <= 1) {
+          window.setTimeout(() => setSubmitted(true), 0);
+          return 0;
+        }
+        return currentSeconds - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timer);
+  }, [activeExam, examMode, remainingSeconds, submitted]);
+
+  useEffect(() => {
+    if (!current?.question.audioText || submitted || examMode !== "timed") return;
+    const timeout = window.setTimeout(() => {
+      speakKorean(current.question.audioText, { rate: speechRate, voiceName });
+    }, 450);
+
+    return () => window.clearTimeout(timeout);
+  }, [current?.question.audioText, current?.question.id, examMode, speechRate, submitted, voiceName]);
+
   const beginnerWords = words.filter((word) => word.level === "초급").length;
   const intermediateWords = words.filter((word) => word.level === "중급").length;
   const advancedWords = words.filter((word) => word.level === "고급").length;
   const masteredWords = words.filter((word) => word.status === "mastered").length;
 
-  function startExam(exam: PracticeExam) {
+  function startExam(exam: PracticeExam, mode: ExamMode = "practice") {
     setActiveExam(exam);
+    setExamMode(mode);
+    setRemainingSeconds(mode === "timed" ? exam.estimatedMinutes * 60 : null);
     setQuestionIndex(0);
     setAnswers({});
     setSubmitted(false);
@@ -586,11 +743,11 @@ export default function TopikPage() {
           <div className="relative z-10 max-w-3xl">
             <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-300">TOPIK PREP CENTER</p>
             <h1 className="mt-3 text-3xl font-black tracking-tight text-white md:text-5xl">Ôn thi TOPIK có chiến lược.</h1>
-            <p className="mt-4 max-w-2xl leading-7 text-slate-300">Luyện đề mô phỏng cho TOPIK I và TOPIK II, bấm nghe trực tiếp, làm bài đọc–viết, xem đáp án và tự tạo đề theo đúng kỹ năng cần ôn.</p>
+            <p className="mt-4 max-w-2xl leading-7 text-slate-300">Luyện đề mô phỏng cho TOPIK I và TOPIK II theo luồng thi trên máy: nghe tự phát, bảng đáp án, làm có giờ, xem lỗi và tạo đề mới theo đúng kỹ năng cần ôn.</p>
             <div className="mt-6 flex flex-wrap gap-3 text-sm">
               <span className="rounded-full border border-slate-500/50 bg-slate-950/25 px-3 py-1.5 text-slate-200">TOPIK I · Nghe + Đọc</span>
               <span className="rounded-full border border-slate-500/50 bg-slate-950/25 px-3 py-1.5 text-slate-200">TOPIK II · Nghe + Đọc + Viết</span>
-              <span className="rounded-full border border-slate-500/50 bg-slate-950/25 px-3 py-1.5 text-slate-200">Đề AI nguyên gốc</span>
+              <span className="rounded-full border border-slate-500/50 bg-slate-950/25 px-3 py-1.5 text-slate-200">Đề AI nguyên gốc · tới 30 câu</span>
             </div>
           </div>
         </section>
@@ -600,6 +757,19 @@ export default function TopikPage() {
           <ReadinessStat label="Từ trung cấp" value={intermediateWords} note="cho TOPIK II" />
           <ReadinessStat label="Từ cao cấp" value={advancedWords} note="cho TOPIK II" />
           <ReadinessStat label="Đã thuộc" value={masteredWords} note="tổng kho từ" highlight />
+        </section>
+
+        <section className="mt-6 grid gap-5 rounded-3xl border border-sky-400/20 bg-sky-400/5 p-5 md:grid-cols-[0.8fr_1.2fr] md:p-6">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-[0.16em] text-sky-300">PHÒNG ÂM THANH TOPIK</p>
+            <h2 className="mt-2 text-xl font-bold text-white">Chọn giọng đọc dễ nghe trước khi làm đề.</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-400">Giọng lấy từ các giọng tiếng Hàn đã cài trong Windows/trình duyệt. Cài thêm giọng Hàn trong hệ điều hành nếu danh sách trống.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-[1fr_150px_auto] sm:items-end">
+            <label className="block text-sm font-medium text-slate-300"><span className="mb-2 block">Giọng tiếng Hàn</span><select value={voiceName} onChange={(event) => setVoiceName(event.target.value)} className="form-control" disabled={!koreanVoices.length}><option value="">{koreanVoices.length ? "Giọng hệ thống mặc định" : "Chưa tìm thấy giọng Hàn"}</option>{koreanVoices.map((voice) => <option key={`${voice.name}-${voice.lang}`} value={voice.name}>{voice.name} · {voice.lang}</option>)}</select></label>
+            <label className="block text-sm font-medium text-slate-300"><span className="mb-2 flex justify-between"><span>Tốc độ</span><span className="text-sky-300">{speechRate.toFixed(2)}×</span></span><input aria-label="Tốc độ giọng đọc" type="range" min="0.7" max="1" step="0.05" value={speechRate} onChange={(event) => setSpeechRate(Number(event.target.value))} className="h-3 w-full accent-sky-300" /></label>
+            <button type="button" onClick={() => speakKorean("안녕하세요. 지금은 TOPIK 듣기 연습을 시작합니다.", { rate: speechRate, voiceName })} className="rounded-xl bg-sky-300 px-4 py-3 text-sm font-bold text-sky-950 transition hover:bg-sky-200">Thử giọng</button>
+          </div>
         </section>
 
         <div className="mt-8 grid grid-cols-3 rounded-2xl border border-slate-800 bg-slate-900 p-1.5">
@@ -626,6 +796,7 @@ export default function TopikPage() {
                       <span className={`inline-flex rounded-full border px-3 py-1 text-xs font-bold ${exam.target === "TOPIK I" ? "border-sky-400/30 bg-sky-400/10 text-sky-300" : "border-violet-400/30 bg-violet-400/10 text-violet-300"}`}>{exam.target}</span>
                       <h3 className="mt-4 text-xl font-bold text-white">{exam.title}</h3>
                       <p className="mt-2 text-sm text-slate-400">{exam.subtitle}</p>
+                      <p className="mt-2 text-xs leading-5 text-slate-500">{topikFormat[exam.target]}</p>
                     </div>
                     <span className="shrink-0 rounded-xl bg-slate-950 px-3 py-2 text-xs font-semibold text-slate-400">{exam.estimatedMinutes} phút</span>
                   </div>
@@ -636,9 +807,12 @@ export default function TopikPage() {
                     ))}
                   </div>
 
-                  <div className="mt-6 flex items-center justify-between border-t border-slate-800 pt-5">
+                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-5">
                     <span className="text-sm text-slate-500">{exam.level} · {getAllQuestions(exam).length} câu</span>
-                    <button type="button" onClick={() => startExam(exam)} className="rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-amber-100">Làm đề →</button>
+                    <div className="flex gap-2">
+                      <button type="button" onClick={() => startExam(exam, "practice")} className="rounded-xl border border-slate-600 px-3 py-2.5 text-sm font-bold text-slate-200 transition hover:border-slate-400">Luyện</button>
+                      <button type="button" onClick={() => startExam(exam, "timed")} className="rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 transition hover:bg-amber-100">Thi có giờ →</button>
+                    </div>
                   </div>
                 </article>
               ))}
@@ -675,9 +849,10 @@ export default function TopikPage() {
                 </FormField>
                 <FormField label="Số câu">
                   <select value={aiCount} onChange={(event) => setAiCount(Number(event.target.value))} className="form-control">
-                    <option value={6}>6 câu · nhanh</option>
-                    <option value={8}>8 câu · tiêu chuẩn</option>
-                    <option value={12}>12 câu · chuyên sâu</option>
+                    <option value={8}>8 câu · nhanh</option>
+                    <option value={12}>12 câu · tiêu chuẩn</option>
+                    <option value={20}>20 câu · luyện sâu</option>
+                    <option value={30}>30 câu · phiên mô phỏng dài</option>
                   </select>
                 </FormField>
               </div>
@@ -699,9 +874,9 @@ export default function TopikPage() {
               <div className="mt-5 space-y-5">
                 <AiFeature number="01" title="Nội dung mới" text="Câu hỏi được tạo riêng theo kỳ thi, kỹ năng và chủ đề bạn chọn." />
                 <AiFeature number="02" title="Có đáp án, giải thích" text="Trắc nghiệm có chấm điểm; câu viết có bài mẫu và checklist tự sửa." />
-                <AiFeature number="03" title="Nghe trực tiếp" text="Các câu nghe dùng giọng đọc tiếng Hàn trên thiết bị của bạn." />
+                <AiFeature number="03" title="Nghe theo giọng bạn chọn" text="Đổi giọng và tốc độ tại Phòng âm thanh TOPIK trước khi mở đề." />
               </div>
-              <p className="mt-6 border-t border-slate-800 pt-5 text-xs leading-5 text-slate-500">Cần có GEMINI_API_KEY trong .env.local. Đây là API AI tiếng Hàn đã dùng trong dự án, không cần thêm API TOPIK riêng.</p>
+              <p className="mt-6 border-t border-slate-800 pt-5 text-xs leading-5 text-slate-500">Cần có GEMINI_API_KEY trong .env.local. Gemini có thể tạo nhiều đề nguyên gốc theo chủ đề của bạn; không cần thêm API TOPIK riêng.</p>
             </aside>
           </section>
         )}
@@ -721,11 +896,12 @@ export default function TopikPage() {
                 <div className="flex flex-wrap items-center gap-2">
                   <span className={`rounded-full border px-3 py-1 text-xs font-bold ${activeExam.target === "TOPIK I" ? "border-sky-400/30 bg-sky-400/10 text-sky-300" : "border-violet-400/30 bg-violet-400/10 text-violet-300"}`}>{activeExam.target}</span>
                   <span className="text-xs text-slate-500">{activeExam.source === "ai" ? "Đề do AI tạo" : "Đề mô phỏng"}</span>
+                  <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${examMode === "timed" ? "border-rose-400/30 bg-rose-400/10 text-rose-200" : "border-slate-600 bg-slate-800 text-slate-300"}`}>{examMode === "timed" ? "CHẾ ĐỘ THI" : "CHẾ ĐỘ LUYỆN"}</span>
                 </div>
                 <h2 className="mt-3 text-2xl font-bold text-white">{activeExam.title}</h2>
                 <p className="mt-1 text-sm text-slate-400">{activeExam.estimatedMinutes} phút · {questions.length} câu · đã trả lời {answeredCount}/{questions.length}</p>
               </div>
-              <button type="button" onClick={() => setActiveExam(null)} className="self-start rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-400 transition hover:border-slate-500 hover:text-white">Đóng đề</button>
+              <div className="flex items-center gap-3 self-start"><span className={`rounded-xl px-3 py-2 font-mono text-lg font-black ${examMode === "timed" ? "bg-rose-400/15 text-rose-200" : "bg-slate-800 text-slate-300"}`}>{remainingSeconds === null ? "TỰ DO" : formatRemainingTime(remainingSeconds)}</span><button type="button" onClick={() => { window.speechSynthesis.cancel(); setActiveExam(null); }} className="rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-400 transition hover:border-slate-500 hover:text-white">Đóng đề</button></div>
             </div>
 
             <div className="mt-5 h-2 overflow-hidden rounded-full bg-slate-800">
@@ -739,6 +915,9 @@ export default function TopikPage() {
                 selectedAnswer={answers[current.question.id] || ""}
                 submitted={submitted}
                 onAnswer={chooseAnswer}
+                voiceName={voiceName}
+                speechRate={speechRate}
+                autoPlaying={examMode === "timed"}
               />
 
               <aside className="order-first lg:order-none">
@@ -778,7 +957,7 @@ export default function TopikPage() {
   );
 }
 
-function ExamQuestionCard({ section, question, selectedAnswer, submitted, onAnswer }: { section: ExamSection; question: ExamQuestion; selectedAnswer: string; submitted: boolean; onAnswer: (questionId: string, answer: string) => void }) {
+function ExamQuestionCard({ section, question, selectedAnswer, submitted, onAnswer, voiceName, speechRate, autoPlaying }: { section: ExamSection; question: ExamQuestion; selectedAnswer: string; submitted: boolean; onAnswer: (questionId: string, answer: string) => void; voiceName: string; speechRate: number; autoPlaying: boolean }) {
   const details = skillInfo[section.skill];
   const isWriting = section.skill === "writing";
   const isCorrect = selectedAnswer === question.answer;
@@ -794,7 +973,8 @@ function ExamQuestionCard({ section, question, selectedAnswer, submitted, onAnsw
       {question.audioText && (
         <div className="mt-6 rounded-2xl border border-sky-400/20 bg-sky-400/10 p-5">
           <p className="text-sm font-semibold text-sky-200">Nghe nội dung trước khi đọc câu hỏi.</p>
-          <button type="button" onClick={() => speakKorean(question.audioText, { rate: 0.8 })} className="mt-4 rounded-xl bg-sky-300 px-4 py-2.5 text-sm font-bold text-sky-950 transition hover:bg-sky-200">Nghe lại</button>
+          <p className="mt-1 text-xs text-sky-100/70">{autoPlaying ? "Chế độ thi đã tự phát một lần khi mở câu hỏi." : "Bạn có thể nghe lại bất cứ lúc nào trong chế độ luyện."}</p>
+          <button type="button" onClick={() => speakKorean(question.audioText, { rate: speechRate, voiceName })} className="mt-4 rounded-xl bg-sky-300 px-4 py-2.5 text-sm font-bold text-sky-950 transition hover:bg-sky-200">Nghe lại · {speechRate.toFixed(2)}×</button>
         </div>
       )}
 
