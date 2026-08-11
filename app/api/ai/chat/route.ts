@@ -2,6 +2,7 @@ import { GoogleGenAI } from "@google/genai";
 import { NextResponse } from "next/server";
 
 import { getAuthenticatedUser } from "@/utils/supabase/auth";
+import { createClient } from "@/utils/supabase/server";
 
 type ChatMessage = {
   role: "user" | "assistant";
@@ -104,6 +105,82 @@ const SCENARIOS: Record<string, string> = {
   travel: "Du lịch Hàn Quốc — hỏi đường, mua vé, check-in khách sạn.",
 };
 
+type LearnerContext = {
+  vocabulary: { korean: string; meaning: string; level: string }[];
+  grammar: { pattern: string; meaning: string; level: string }[];
+  collections: string[];
+  topikMistakes: string[];
+};
+
+async function loadLearnerContext(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string
+): Promise<LearnerContext> {
+  const [vocabularyResult, grammarResult, collectionsResult, topikResult] = await Promise.all([
+    supabase
+      .from("vocabulary")
+      .select("korean,meaning,level")
+      .eq("user_id", userId)
+      .order("next_review_at", { ascending: true, nullsFirst: true })
+      .limit(12),
+    supabase
+      .from("grammar")
+      .select("pattern,meaning,level")
+      .eq("user_id", userId)
+      .order("next_review_at", { ascending: true, nullsFirst: true })
+      .limit(8),
+    supabase
+      .from("vocabulary_collections")
+      .select("title")
+      .eq("owner_id", userId)
+      .order("updated_at", { ascending: false })
+      .limit(5),
+    supabase
+      .from("topik_mistakes")
+      .select("prompt")
+      .eq("user_id", userId)
+      .order("next_review_at", { ascending: true, nullsFirst: true })
+      .limit(8),
+  ]);
+
+  return {
+    vocabulary: (vocabularyResult.data || []).map((item) => ({
+      korean: typeof item.korean === "string" ? item.korean : "",
+      meaning: typeof item.meaning === "string" ? item.meaning : "",
+      level: typeof item.level === "string" ? item.level : "",
+    })).filter((item) => item.korean),
+    grammar: (grammarResult.data || []).map((item) => ({
+      pattern: typeof item.pattern === "string" ? item.pattern : "",
+      meaning: typeof item.meaning === "string" ? item.meaning : "",
+      level: typeof item.level === "string" ? item.level : "",
+    })).filter((item) => item.pattern),
+    collections: (collectionsResult.data || [])
+      .map((item) => (typeof item.title === "string" ? item.title : ""))
+      .filter(Boolean),
+    topikMistakes: (topikResult.data || [])
+      .map((item) => (typeof item.prompt === "string" ? item.prompt : ""))
+      .filter(Boolean),
+  };
+}
+
+function learnerContextText(context: LearnerContext) {
+  const vocabulary = context.vocabulary
+    .map((item) => `${item.korean} (${item.meaning}${item.level ? `, ${item.level}` : ""})`)
+    .join(", ");
+  const grammar = context.grammar
+    .map((item) => `${item.pattern} (${item.meaning}${item.level ? `, ${item.level}` : ""})`)
+    .join(", ");
+  const collections = context.collections.join(", ");
+  const topikMistakes = context.topikMistakes.join(" | ");
+
+  return [
+    `Từ vựng gần đây/cần củng cố: ${vocabulary || "chưa có dữ liệu"}`,
+    `Ngữ pháp đã lưu: ${grammar || "chưa có dữ liệu"}`,
+    `Bộ từ cá nhân: ${collections || "chưa có dữ liệu"}`,
+    `Câu TOPIK từng sai cần củng cố: ${topikMistakes || "chưa có dữ liệu"}`,
+  ].join("\n");
+}
+
 export async function POST(request: Request) {
   try {
     const user = await getAuthenticatedUser(request);
@@ -129,12 +206,14 @@ export async function POST(request: Request) {
       typeof body.mode === "string" ? body.mode : "conversation";
 
     const ai = new GoogleGenAI({ apiKey });
+    const supabase = await createClient(request);
+    const learnerContext = await loadLearnerContext(supabase, user.id);
 
     if (mode === "writing") {
-      return handleWriting(body, ai);
+      return handleWriting(body, ai, learnerContext);
     }
 
-    return handleConversation(body, ai);
+    return handleConversation(body, ai, learnerContext);
   } catch (error: unknown) {
     console.error("AI CHAT ERROR:", error);
 
@@ -147,7 +226,8 @@ export async function POST(request: Request) {
 
 async function handleWriting(
   body: Record<string, unknown>,
-  ai: GoogleGenAI
+  ai: GoogleGenAI,
+  learnerContext: LearnerContext
 ) {
   const text =
     typeof body.text === "string" ? body.text.trim() : "";
@@ -179,6 +259,9 @@ BÀI VIẾT CỦA HỌC VIÊN:
 ----------
 ${text}
 ----------
+
+HỒ SƠ HỌC TẬP THAM KHẢO:
+${learnerContextText(learnerContext)}
 
 Hãy chấm và sửa chi tiết:
 - correctedText: câu đúng/tự nhiên nhất
@@ -212,7 +295,8 @@ Hãy chấm và sửa chi tiết:
 
 async function handleConversation(
   body: Record<string, unknown>,
-  ai: GoogleGenAI
+  ai: GoogleGenAI,
+  learnerContext: LearnerContext
 ) {
   const messages = Array.isArray(body.messages)
     ? (body.messages as ChatMessage[]).filter(
@@ -264,6 +348,10 @@ Bạn là giáo viên tiếng Hàn thân thiện, dạy người Việt qua hộ
 
 TÌNH HUỐNG: ${scenario}
 TRÌNH ĐỘ HỌC VIÊN: ${level}
+
+HỒ SƠ HỌC TẬP THAM KHẢO:
+${learnerContextText(learnerContext)}
+Chỉ dùng hồ sơ để gợi ý đúng điểm yếu hoặc ôn lại từ/ngữ pháp phù hợp; không nói ra dữ liệu hồ sơ như một bản báo cáo.
 
 LỊCH SỬ HỘI THOẠI:
 ----------

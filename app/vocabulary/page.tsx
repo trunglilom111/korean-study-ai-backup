@@ -10,6 +10,7 @@ import VocabularyCollections, {
   CollectionPicker,
 } from "@/components/VocabularyCollections";
 import { createClient } from "@/utils/supabase/client";
+import { apiFetch } from "@/utils/api-client";
 
 type DictionaryResult = {
   targetCode: string;
@@ -347,7 +348,7 @@ export default function VocabularyPage() {
     }
 
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/dictionary?q=${encodeURIComponent(
           trimmedQuery
         )}&direction=${direction}`
@@ -378,7 +379,7 @@ export default function VocabularyPage() {
         return;
       }
 
-      const aiResponse = await fetch("/api/ai/translate", {
+      const aiResponse = await apiFetch("/api/ai/translate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -487,7 +488,7 @@ export default function VocabularyPage() {
     try {
       if (item.targetCode && item.source !== "ai") {
         const detailResponse =
-          await fetch(
+          await apiFetch(
             `/api/dictionary/detail?code=${encodeURIComponent(
               item.targetCode
             )}`

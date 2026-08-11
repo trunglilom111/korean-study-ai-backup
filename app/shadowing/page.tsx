@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/AppShell";
 import { createClient } from "@/utils/supabase/client";
-import { parseMediaUrl, type MediaSource } from "@/utils/media-url";
+import { apiFetch } from "@/utils/api-client";
+import { parseMediaUrl } from "@/utils/media-url";
 import { preloadSpeechVoices, speakKorean } from "@/utils/speech";
 
 type Level = "sơ cấp" | "trung cấp" | "cao cấp";
@@ -92,7 +93,7 @@ export default function ShadowingPage() {
   const [topic, setTopic] = useState("");
   const [mediaUrl, setMediaUrl] = useState("");
   const [transcript, setTranscript] = useState("");
-  const [parsedMedia, setParsedMedia] = useState<MediaSource | null>(null);
+  const parsedMedia = useMemo(() => parseMediaUrl(mediaUrl), [mediaUrl]);
   const [videoMeta, setVideoMeta] = useState<{ title: string; author: string } | null>(
     null
   );
@@ -143,11 +144,6 @@ export default function ShadowingPage() {
       window.speechSynthesis.cancel();
     };
   }, []);
-
-  useEffect(() => {
-    const parsed = parseMediaUrl(mediaUrl);
-    setParsedMedia(parsed);
-  }, [mediaUrl]);
 
   const sentences =
     lesson && lesson.sentences.length > 0
@@ -259,7 +255,7 @@ export default function ShadowingPage() {
     setError("");
 
     try {
-      const response = await fetch("/api/ai/shadowing", {
+      const response = await apiFetch("/api/ai/shadowing", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -303,7 +299,7 @@ export default function ShadowingPage() {
     setError("");
 
     try {
-      const response = await fetch("/api/ai/shadowing/from-url", {
+      const response = await apiFetch("/api/ai/shadowing/from-url", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -331,7 +327,7 @@ export default function ShadowingPage() {
     }
   }
 
-  function useSample(sample: ShadowingSentence) {
+  function selectSample(sample: ShadowingSentence) {
     stopPlayback();
     setLesson(null);
     setManualText(sample.korean);
@@ -742,7 +738,7 @@ export default function ShadowingPage() {
               <button
                 key={sample.korean}
                 type="button"
-                onClick={() => useSample(sample)}
+                onClick={() => selectSample(sample)}
                 className="rounded-xl bg-slate-950 px-3 py-2 text-sm transition hover:bg-slate-800"
               >
                 {sample.korean}

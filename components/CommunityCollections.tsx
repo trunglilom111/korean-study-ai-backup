@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { apiFetch } from "@/utils/api-client";
+import CollectionStudy, { CollectionStudyItem } from "@/components/CollectionStudy";
+
 type CommunityCollection = {
   id: string;
   title: string;
@@ -17,6 +20,7 @@ type CollectionItem = {
     korean?: string;
     meaning?: string;
     pronunciation?: string;
+    examples?: string[];
   };
 };
 
@@ -47,6 +51,7 @@ export default function CommunityCollections() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [message, setMessage] = useState("");
+  const [studying, setStudying] = useState(false);
 
   const loadCollections = useCallback(async () => {
     setLoading(true);
@@ -62,7 +67,7 @@ export default function CommunityCollections() {
         params.set("q", submittedQuery);
       }
 
-      const response = await fetch(`/api/community/collections?${params}`);
+      const response = await apiFetch(`/api/community/collections?${params}`);
       const payload = (await response.json()) as {
         collections?: CommunityCollection[];
         error?: string;
@@ -101,8 +106,8 @@ export default function CommunityCollections() {
 
     try {
       const [detailResponse, followResponse] = await Promise.all([
-        fetch(`/api/collections/${id}`),
-        fetch(`/api/collections/${id}/follow`),
+        apiFetch(`/api/collections/${id}`),
+        apiFetch(`/api/collections/${id}/follow`),
       ]);
       const detailPayload = (await detailResponse.json()) as {
         collection?: { title: string; description: string };
@@ -144,7 +149,7 @@ export default function CommunityCollections() {
     setMessage("");
 
     try {
-      const response = await fetch(`/api/collections/${selectedId}/follow`, {
+      const response = await apiFetch(`/api/collections/${selectedId}/follow`, {
         method: following ? "DELETE" : "POST",
       });
       const payload = (await response.json()) as { error?: string };
@@ -186,7 +191,7 @@ export default function CommunityCollections() {
     setMessage("");
 
     try {
-      const response = await fetch(`/api/collections/${selectedId}/copy`, {
+      const response = await apiFetch(`/api/collections/${selectedId}/copy`, {
         method: "POST",
       });
       const payload = (await response.json()) as { error?: string };
@@ -350,7 +355,24 @@ export default function CommunityCollections() {
                 >
                   Sao chép vào thư viện
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setStudying(true)}
+                  disabled={detail.items.length === 0}
+                  className="rounded-xl border border-amber-300/50 px-4 py-2 text-sm font-semibold text-amber-200 disabled:opacity-50"
+                >
+                  Luyện bộ từ
+                </button>
               </div>
+              {studying && (
+                <CollectionStudy
+                  key={selectedId}
+                  collectionId={selectedId}
+                  title={detail.title}
+                  items={detail.items as CollectionStudyItem[]}
+                  onClose={() => setStudying(false)}
+                />
+              )}
             </>
           )}
         </div>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { speakChinese } from "@/utils/chinese-speech";
+import { apiFetch } from "@/utils/api-client";
 
 type StudyStage = {
   id: "foundation" | "hsk1" | "hsk2" | "hsk3" | "hsk4";
@@ -129,7 +130,7 @@ export default function ChineseStudyPage() {
     setGenerating(true);
     setGenerationError("");
     try {
-      const response = await fetch("/api/ai/chinese-vocabulary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ level: aiLevel, topic: aiTopic, count: aiCount }) });
+      const response = await apiFetch("/api/ai/chinese-vocabulary", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ level: aiLevel, topic: aiTopic, count: aiCount }) });
       const data = (await response.json()) as GeminiVocabularyResponse;
       if (!response.ok || !data.ok || !data.vocabulary?.length) {
         setGenerationError(data.error || "Gemini chưa tạo được bộ học liệu. Hãy thử lại sau.");

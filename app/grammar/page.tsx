@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/AppShell";
@@ -1089,6 +1090,10 @@ export default function GrammarPage() {
         </p>
 
       </div>
+
+      <Link href="/grammar/review" className="mb-8 inline-flex rounded-xl bg-white px-4 py-2 text-sm font-bold text-black">
+        🧠 Ôn ngữ pháp hôm nay
+      </Link>
 
       {/* =====================================
           STATS

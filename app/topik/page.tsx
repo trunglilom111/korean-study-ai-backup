@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import StudyCanvas from "@/components/StudyCanvas";
 import { createClient } from "@/utils/supabase/client";
+import { apiFetch } from "@/utils/api-client";
 import { getKoreanVoices, speakKorean } from "@/utils/speech";
 
 type Skill = "listening" | "reading" | "writing";
@@ -48,10 +50,32 @@ type VocabularyRow = {
   status: string;
 };
 
+type TopikMistake = {
+  questionId: string;
+  prompt: string;
+  selectedAnswer: string;
+  correctAnswer: string;
+  explanation: string;
+};
+
 type AiTopikResponse = {
   ok: boolean;
   error?: string;
   exam?: Omit<PracticeExam, "id" | "level" | "source"> & { target: "TOPIK I" | "TOPIK II" };
+};
+
+type TopikAnalysis = {
+  summary: string;
+  patterns: string[];
+  weakAreas: string[];
+  recommendations: string[];
+  focus: string;
+};
+
+type AiTopikAnalysisResponse = {
+  ok: boolean;
+  error?: string;
+  analysis?: TopikAnalysis;
 };
 
 const skillInfo: Record<Skill, { label: string; icon: string; color: string }> = {
@@ -524,6 +548,12 @@ export default function TopikPage() {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitted, setSubmitted] = useState(false);
+  const [examRunId, setExamRunId] = useState(0);
+  const [attemptMessage, setAttemptMessage] = useState("");
+  const [attemptSaving, setAttemptSaving] = useState(false);
+  const [analysis, setAnalysis] = useState<TopikAnalysis | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analysisError, setAnalysisError] = useState("");
   const [aiTarget, setAiTarget] = useState<"TOPIK I" | "TOPIK II">("TOPIK I");
   const [aiSkill, setAiSkill] = useState("all");
   const [aiLevel, setAiLevel] = useState("beginner");
@@ -587,7 +617,23 @@ export default function TopikPage() {
 
   const questions = useMemo(() => getAllQuestions(activeExam), [activeExam]);
   const current = questions[questionIndex];
-  const scoredQuestions = questions.filter(({ question }) => question.options.length > 0);
+  const scoredQuestions = useMemo(
+    () => questions.filter(({ question }) => question.options.length > 0),
+    [questions]
+  );
+  const mistakes = useMemo<TopikMistake[]>(
+    () =>
+      scoredQuestions
+        .filter(({ question }) => answers[question.id] !== question.answer)
+        .map(({ question }) => ({
+          questionId: question.id,
+          prompt: question.prompt,
+          selectedAnswer: answers[question.id] || "",
+          correctAnswer: question.answer,
+          explanation: question.explanation,
+        })),
+    [answers, scoredQuestions]
+  );
   const correctCount = scoredQuestions.filter(
     ({ question }) => answers[question.id] === question.answer
   ).length;
@@ -595,6 +641,109 @@ export default function TopikPage() {
   const scorePercent = scoredQuestions.length
     ? Math.round((correctCount / scoredQuestions.length) * 100)
     : 0;
+  const sectionStats = useMemo(
+    () =>
+      activeExam?.sections.map((section) => {
+        const sectionQuestions = section.questions.filter((question) => question.options.length > 0);
+        const correct = sectionQuestions.filter((question) => answers[question.id] === question.answer).length;
+        return { skill: section.skill, title: section.title, correct, total: sectionQuestions.length };
+      }) || [],
+    [activeExam, answers]
+  );
+
+  useEffect(() => {
+    if (!submitted || !activeExam || examRunId === 0) return;
+
+    const exam = activeExam;
+    let cancelled = false;
+
+    async function saveAttempt() {
+      setAttemptSaving(true);
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (!user || cancelled) {
+        setAttemptSaving(false);
+        return;
+      }
+
+      const { data: attempt, error: attemptError } = await supabase
+        .from("topik_attempts")
+        .insert({
+          user_id: user.id,
+          exam_id: exam.id,
+          exam_title: exam.title,
+          target: exam.target,
+          mode: examMode,
+          score_percent: scorePercent,
+          correct_count: correctCount,
+          total_questions: scoredQuestions.length,
+          time_spent_seconds:
+            examMode === "timed"
+              ? Math.max(0, exam.estimatedMinutes * 60 - (remainingSeconds || 0))
+              : 0,
+          answers,
+          mistakes,
+        })
+        .select("id")
+        .single();
+
+      if (attemptError || !attempt) {
+        if (!cancelled) {
+          setAttemptMessage("Kết quả vẫn hiển thị, nhưng chưa lưu được lịch sử. Hãy chạy migration TOPIK trước.");
+          setAttemptSaving(false);
+        }
+        return;
+      }
+
+      if (mistakes.length > 0) {
+        const { error: mistakesError } = await supabase.from("topik_mistakes").insert(
+          mistakes.map((mistake) => ({
+            attempt_id: attempt.id,
+            user_id: user.id,
+            exam_id: exam.id,
+            question_id: mistake.questionId,
+            prompt: mistake.prompt,
+            selected_answer: mistake.selectedAnswer,
+            correct_answer: mistake.correctAnswer,
+            explanation: mistake.explanation,
+          }))
+        );
+
+        if (mistakesError && !cancelled) {
+          setAttemptMessage("Kết quả đã lưu, nhưng chưa lưu được danh sách câu sai.");
+        }
+      }
+
+      if (!cancelled) {
+        setAttemptMessage(
+          mistakes.length > 0
+            ? "Đã lưu kết quả và các câu sai vào mục ôn TOPIK."
+            : "Đã lưu kết quả TOPIK."
+        );
+        setAttemptSaving(false);
+      }
+    }
+
+    void saveAttempt();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeExam,
+    answers,
+    correctCount,
+    examMode,
+    examRunId,
+    mistakes,
+    remainingSeconds,
+    scorePercent,
+    scoredQuestions.length,
+    submitted,
+    supabase,
+  ]);
 
   useEffect(() => {
     if (!activeExam || submitted || examMode !== "timed" || remainingSeconds === null) return;
@@ -631,10 +780,14 @@ export default function TopikPage() {
   function startExam(exam: PracticeExam, mode: ExamMode = "practice") {
     setActiveExam(exam);
     setExamMode(mode);
+    setExamRunId((currentRun) => currentRun + 1);
     setRemainingSeconds(mode === "timed" ? exam.estimatedMinutes * 60 : null);
     setQuestionIndex(0);
     setAnswers({});
     setSubmitted(false);
+    setAttemptMessage("");
+    setAnalysis(null);
+    setAnalysisError("");
     window.setTimeout(() => {
       document.getElementById("exam-room")?.scrollIntoView({ behavior: "smooth", block: "start" });
     }, 0);
@@ -682,7 +835,7 @@ export default function TopikPage() {
     setGenerationError("");
 
     try {
-      const response = await fetch("/api/ai/topik", {
+      const response = await apiFetch("/api/ai/topik", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -724,6 +877,36 @@ export default function TopikPage() {
     }
   }
 
+  async function analyzeResult() {
+    if (!activeExam || !submitted || analyzing) return;
+
+    setAnalyzing(true);
+    setAnalysisError("");
+    try {
+      const response = await apiFetch("/api/ai/topik/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          examTitle: activeExam.title,
+          target: activeExam.target,
+          scorePercent,
+          correctCount,
+          totalQuestions: scoredQuestions.length,
+          mistakes: mistakes.slice(0, 10),
+        }),
+      });
+      const data = (await response.json()) as AiTopikAnalysisResponse;
+      if (!response.ok || !data.ok || !data.analysis) {
+        throw new Error(data.error || "Chưa thể phân tích bài làm.");
+      }
+      setAnalysis(data.analysis);
+    } catch (error) {
+      setAnalysisError(error instanceof Error ? error.message : "Chưa thể phân tích bài làm.");
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
   if (!authReady) {
     return (
       <AppShell>
@@ -752,6 +935,12 @@ export default function TopikPage() {
             </div>
           </div>
         </section>
+
+        <div className="mt-4 flex justify-end">
+          <Link href="/topik/review" className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-2.5 text-sm font-semibold text-rose-200 transition hover:bg-rose-400/15">
+            🧠 Ôn câu TOPIK sai
+          </Link>
+        </div>
 
         <section className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ReadinessStat label="Từ sơ cấp" value={beginnerWords} note="cho TOPIK I" />
@@ -948,12 +1137,59 @@ export default function TopikPage() {
             </div>
 
             {submitted && (
-              <div className="mt-6 rounded-3xl border border-emerald-400/25 bg-emerald-400/10 p-5 md:flex md:items-center md:justify-between">
+              <div>
+                <div className="mt-6 rounded-3xl border border-emerald-400/25 bg-emerald-400/10 p-5 md:flex md:items-center md:justify-between">
                 <div>
                   <p className="text-sm font-semibold text-emerald-300">Kết quả trắc nghiệm</p>
                   <p className="mt-1 text-2xl font-black text-white">{correctCount}/{scoredQuestions.length} câu đúng · {scorePercent}%</p>
                 </div>
                 <p className="mt-3 max-w-md text-sm leading-6 text-slate-300 md:mt-0">Hãy mở lại các câu có đáp án sai để đọc giải thích. Với phần viết, đối chiếu từng tiêu chí trong checklist.</p>
+                </div>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                {sectionStats.map((section) => (
+                  <div key={section.skill} className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-sm">
+                    <p className="text-slate-500">{section.title}</p>
+                    <p className="mt-1 font-bold text-white">{section.total ? Math.round((section.correct / section.total) * 100) : 0}%</p>
+                    <p className="text-xs text-slate-500">{section.correct}/{section.total} câu</p>
+                  </div>
+                ))}
+              </div>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <button type="button" onClick={() => void analyzeResult()} disabled={analyzing} className="rounded-xl bg-violet-300 px-4 py-2.5 text-sm font-bold text-violet-950 disabled:opacity-50">
+                  {analyzing ? "AI đang phân tích..." : "✨ AI phân tích bài làm"}
+                </button>
+                {analysisError && <p className="text-sm text-rose-200">{analysisError}</p>}
+              </div>
+              {analysis && (
+                <div className="mt-4 rounded-2xl border border-violet-400/25 bg-violet-400/5 p-4 text-sm">
+                  <p className="font-bold text-violet-200">Phân tích cá nhân</p>
+                  <p className="mt-2 text-slate-200">{analysis.summary}</p>
+                  <div className="mt-3 grid gap-3 md:grid-cols-2">
+                    <div><p className="font-semibold text-slate-300">Điểm yếu</p><ul className="mt-1 list-disc space-y-1 pl-5 text-slate-400">{analysis.weakAreas.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                    <div><p className="font-semibold text-slate-300">Bài tập tiếp theo</p><ul className="mt-1 list-disc space-y-1 pl-5 text-slate-400">{analysis.recommendations.map((item) => <li key={item}>{item}</li>)}</ul></div>
+                  </div>
+                  <p className="mt-3 font-semibold text-amber-200">Trọng tâm: {analysis.focus}</p>
+                </div>
+              )}
+              {attemptMessage && <p className="mt-3 text-sm text-slate-400" role="status">{attemptSaving ? "Đang lưu kết quả..." : attemptMessage}</p>}
+              {mistakes.length > 0 && (
+                <div className="mt-4 rounded-2xl border border-rose-400/20 bg-rose-400/5 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <p className="font-bold text-rose-200">Câu sai cần ôn ({mistakes.length})</p>
+                    <Link href="/topik/review" className="text-sm font-semibold text-rose-200 underline">Mở bộ ôn câu sai</Link>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {mistakes.slice(0, 5).map((mistake) => (
+                      <div key={mistake.questionId} className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-sm">
+                        <p className="font-semibold text-white">{mistake.prompt}</p>
+                        <p className="mt-1 text-rose-200">Bạn chọn: {mistake.selectedAnswer || "Chưa trả lời"}</p>
+                        <p className="mt-1 text-emerald-200">Đáp án đúng: {mistake.correctAnswer}</p>
+                        <p className="mt-1 text-slate-400">{mistake.explanation}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                )}
               </div>
             )}
           </section>

@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { speakKorean } from "@/utils/speech";
+import { apiFetch } from "@/utils/api-client";
 
 type WritingResponse = {
   ok: boolean;
@@ -42,7 +43,7 @@ export default function AiWritingPractice() {
     setResult(null);
 
     try {
-      const response = await fetch("/api/ai/chat", {
+      const response = await apiFetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

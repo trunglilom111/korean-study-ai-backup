@@ -2,6 +2,9 @@
 
 import { FormEvent, useEffect, useState } from "react";
 
+import { apiFetch } from "@/utils/api-client";
+import CollectionStudy, { CollectionStudyItem } from "@/components/CollectionStudy";
+
 type CollectionVisibility = "PRIVATE" | "UNLISTED" | "PUBLIC";
 
 type VocabularyCollection = {
@@ -19,6 +22,7 @@ type CollectionItem = {
     korean?: string;
     meaning?: string;
     pronunciation?: string;
+    examples?: string[];
   };
 };
 
@@ -62,7 +66,7 @@ async function readApiResponse<T>(
 }
 
 async function loadCollections(): Promise<VocabularyCollection[]> {
-  const response = await fetch("/api/collections", {
+  const response = await apiFetch("/api/collections", {
     cache: "no-store",
   });
   const data = await readApiResponse<ApiCollectionsResponse>(response);
@@ -94,6 +98,7 @@ export default function VocabularyCollections({
     Record<string, CollectionItem[]>
   >({});
   const [loadingItemsId, setLoadingItemsId] = useState("");
+  const [studyCollectionId, setStudyCollectionId] = useState("");
 
   async function refreshCollections() {
     try {
@@ -150,7 +155,7 @@ export default function VocabularyCollections({
     try {
       setSaving(true);
       setMessage("");
-      const response = await fetch("/api/collections", {
+      const response = await apiFetch("/api/collections", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -187,7 +192,7 @@ export default function VocabularyCollections({
   async function saveCollection(collectionId: string) {
     try {
       setSaving(true);
-      const response = await fetch(`/api/collections/${collectionId}`, {
+      const response = await apiFetch(`/api/collections/${collectionId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -222,7 +227,7 @@ export default function VocabularyCollections({
 
     try {
       setSaving(true);
-      const response = await fetch(`/api/collections/${collection.id}`, {
+      const response = await apiFetch(`/api/collections/${collection.id}`, {
         method: "DELETE",
       });
 
@@ -248,7 +253,7 @@ export default function VocabularyCollections({
 
     try {
       setLoadingItemsId(collectionId);
-      const response = await fetch(`/api/collections/${collectionId}`, {
+      const response = await apiFetch(`/api/collections/${collectionId}`, {
         cache: "no-store",
       });
       const data = await readApiResponse<{
@@ -272,7 +277,7 @@ export default function VocabularyCollections({
 
   async function removeItem(collectionId: string, vocabularyId: string) {
     try {
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/collections/${collectionId}/items/${vocabularyId}`,
         { method: "DELETE" }
       );
@@ -495,6 +500,24 @@ export default function VocabularyCollections({
                     </div>
                   ))
                 )}
+                {(itemsByCollection[collection.id] || []).length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setStudyCollectionId(collection.id)}
+                    className="rounded-xl bg-amber-300 px-4 py-2 text-sm font-bold text-slate-950"
+                  >
+                    Luyện bộ từ
+                  </button>
+                )}
+                {studyCollectionId === collection.id && (
+                  <CollectionStudy
+                    key={collection.id}
+                    collectionId={collection.id}
+                    title={collection.title}
+                    items={(itemsByCollection[collection.id] || []) as CollectionStudyItem[]}
+                    onClose={() => setStudyCollectionId("")}
+                  />
+                )}
               </div>
             )}
           </div>
@@ -544,7 +567,7 @@ export function CollectionPicker({
 
     try {
       setSaving(true);
-      const response = await fetch(
+      const response = await apiFetch(
         `/api/collections/${selectedId}/items`,
         {
           method: "POST",

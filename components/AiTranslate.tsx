@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { speakKorean } from "@/utils/speech";
+import { apiFetch } from "@/utils/api-client";
 
 type Mode =
   | "auto"
@@ -118,7 +119,7 @@ export default function AiTranslate() {
 
     try {
       const response =
-        await fetch(
+        await apiFetch(
           "/api/ai/translate",
           {
             method:
@@ -216,7 +217,7 @@ export default function AiTranslate() {
    * =========================================
    */
 
-  function useExample(
+  function fillExample(
     value: string,
     newMode: Mode
   ) {
@@ -555,7 +556,7 @@ export default function AiTranslate() {
                 title="🇻🇳 → 🇰🇷"
                 text="Ngày mai tôi phải đến trường sớm."
                 onClick={() =>
-                  useExample(
+                  fillExample(
                     "Ngày mai tôi phải đến trường sớm.",
                     "vi-ko"
                   )
@@ -566,7 +567,7 @@ export default function AiTranslate() {
                 title="🇰🇷 → 🇻🇳"
                 text="요즘 한국 생활에 많이 익숙해졌어요."
                 onClick={() =>
-                  useExample(
+                  fillExample(
                     "요즘 한국 생활에 많이 익숙해졌어요.",
                     "ko-vi"
                   )
@@ -577,7 +578,7 @@ export default function AiTranslate() {
                 title="🛠️ Sửa câu"
                 text="어제 학교에 가고 싶어요."
                 onClick={() =>
-                  useExample(
+                  fillExample(
                     "어제 학교에 가고 싶어요.",
                     "correct"
                   )

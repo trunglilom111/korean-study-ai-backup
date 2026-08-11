@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { createClient } from "@/utils/supabase/client";
+import { apiFetch } from "@/utils/api-client";
 
 type AnalysisMode = "grammar" | "sentence" | "compare";
 
@@ -120,19 +121,9 @@ export default function GrammarExplorer() {
     setCompareResult(null);
 
     try {
-      const supabase = createClient();
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      const headers: HeadersInit = { "Content-Type": "application/json" };
-
-      if (session?.access_token) {
-        headers.Authorization = `Bearer ${session.access_token}`;
-      }
-
-      const response = await fetch("/api/ai/grammar/explain", {
+      const response = await apiFetch("/api/ai/grammar/explain", {
         method: "POST",
-        headers,
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           input: value,
           mode,
@@ -371,6 +362,7 @@ export default function GrammarExplorer() {
       )}
 
       {result && <GrammarResultView result={result} saving={saving} onSave={() => void saveGrammar()} />}
+      {result && <GrammarPractice result={result} />}
       {sentenceResult && <SentenceResultView result={sentenceResult} />}
       {compareResult && <CompareResultView result={compareResult} />}
     </section>
@@ -430,6 +422,35 @@ function GrammarResultView({
       <button type="button" disabled={saving} onClick={onSave} className="rounded-xl bg-white px-5 py-3 font-bold text-black disabled:opacity-50">
         {saving ? "Đang lưu..." : "⭐ Lưu vào kho ngữ pháp"}
       </button>
+    </div>
+  );
+}
+
+function GrammarPractice({ result }: { result: GrammarResult }) {
+  const [answer, setAnswer] = useState("");
+  const [checked, setChecked] = useState(false);
+  const example = result.examples[0];
+  const expected = example?.korean || "";
+  const blankSentence = expected.replace(result.pattern, "___");
+  const isCorrect = Boolean(answer.trim() && expected.includes(answer.trim()));
+
+  if (!example) return null;
+
+  return (
+    <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/5 p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-wider text-amber-300">Luyá»‡n ngá»¯ phĂ¡p</p>
+          <p className="mt-1 font-semibold text-white">Äiá»n pháº§n cĂ²n thiáº¿u báº±ng máº«u {result.pattern}</p>
+        </div>
+        {checked && <span className={isCorrect ? "text-emerald-300" : "text-rose-300"}>{isCorrect ? "ÄĂºng rá»“i" : "Thá»­ láº¡i"}</span>}
+      </div>
+      <p className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-3 text-lg text-slate-100">{blankSentence}</p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <input value={answer} onChange={(event) => { setAnswer(event.target.value); setChecked(false); }} placeholder="Nháº­p pháº§n cĂ²n thiáº¿u..." className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-amber-300" />
+        <button type="button" onClick={() => setChecked(true)} className="rounded-xl bg-amber-300 px-4 py-2 font-bold text-slate-950">Kiá»ƒm tra</button>
+      </div>
+      {checked && !isCorrect && <p className="mt-2 text-sm text-slate-400">ÄĂ¡p Ă¡n tham kháº£o: {expected}</p>}
     </div>
   );
 }

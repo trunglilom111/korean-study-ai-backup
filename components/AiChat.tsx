@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import { preloadSpeechVoices, speakKorean } from "@/utils/speech";
+import { apiFetch } from "@/utils/api-client";
 
 type ChatMessage = {
   id: string;
@@ -112,7 +113,7 @@ export default function AiChat() {
     setError("");
 
     try {
-      const response = await fetch("/api/ai/chat", {
+      const response = await apiFetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

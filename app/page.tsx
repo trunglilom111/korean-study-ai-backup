@@ -24,6 +24,14 @@ type VocabularyRow = {
   created_at: string;
 };
 
+type GrammarDueRow = {
+  next_review_at: string | null;
+};
+
+type TopikDueRow = {
+  next_review_at: string | null;
+};
+
 export default function Home() {
   const router = useRouter();
 
@@ -34,6 +42,9 @@ export default function Home() {
   const [words, setWords] =
     useState<VocabularyRow[]>([]);
 
+  const [grammarDue, setGrammarDue] = useState(0);
+  const [topikDue, setTopikDue] = useState(0);
+
   const [email, setEmail] =
     useState("");
 
@@ -42,6 +53,8 @@ export default function Home() {
 
   const [loggingOut, setLoggingOut] =
     useState(false);
+
+  const [dashboardNow] = useState(() => Date.now());
 
   /*
    * =========================================
@@ -147,6 +160,42 @@ export default function Home() {
           []) as VocabularyRow[]
       );
 
+      const { data: grammarData, error: grammarError } = await supabase
+        .from("grammar")
+        .select("next_review_at")
+        .eq("user_id", user.id);
+
+      if (!cancelled) {
+        const now = Date.now();
+        setGrammarDue(
+          grammarError
+            ? 0
+            : ((grammarData || []) as GrammarDueRow[]).filter(
+                (item) =>
+                  !item.next_review_at ||
+                  new Date(item.next_review_at).getTime() <= now
+              ).length
+        );
+      }
+
+      const { data: topikData, error: topikError } = await supabase
+        .from("topik_mistakes")
+        .select("next_review_at")
+        .eq("user_id", user.id);
+
+      if (!cancelled) {
+        const now = Date.now();
+        setTopikDue(
+          topikError
+            ? 0
+            : ((topikData || []) as TopikDueRow[]).filter(
+                (item) =>
+                  !item.next_review_at ||
+                  new Date(item.next_review_at).getTime() <= now
+              ).length
+        );
+      }
+
       setLoading(false);
     }
 
@@ -225,8 +274,7 @@ export default function Home() {
 
   const dueWords =
     useMemo(() => {
-      const now =
-        Date.now();
+      const now = dashboardNow;
 
       return words.filter(
         (word) => {
@@ -244,7 +292,7 @@ export default function Home() {
           );
         }
       ).length;
-    }, [words]);
+    }, [dashboardNow, words]);
 
   /*
    * =========================================
@@ -349,7 +397,7 @@ export default function Home() {
        * thử bắt đầu tính từ hôm qua.
        */
 
-      let cursor =
+      const cursor =
         new Date(today);
 
       const todayKey =
@@ -498,7 +546,7 @@ export default function Home() {
           MAIN STATS
       ===================================== */}
 
-      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-6">
 
         <Stat
           title="🔥 Streak"
@@ -527,13 +575,20 @@ export default function Home() {
           text="từ"
         />
 
+        <Stat
+          title="🧠 Ngữ pháp"
+          value={grammarDue}
+          text="cần ôn"
+          highlight={grammarDue > 0}
+        />
+
       </div>
 
       {/* =====================================
           QUICK ACTION
       ===================================== */}
 
-      <div className="mb-8 grid gap-3 md:grid-cols-2">
+      <div className="mb-8 grid gap-3 md:grid-cols-4">
 
         <Link
           href="/review"
@@ -598,6 +653,36 @@ export default function Home() {
 
           </div>
 
+        </Link>
+
+        <Link
+          href="/grammar/review"
+          className="group rounded-3xl border border-violet-400/25 bg-violet-400/10 p-6 transition hover:-translate-y-1 hover:bg-violet-400/15"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-violet-200">🧠 Ôn cấu trúc</p>
+              <h2 className="mt-1 text-2xl font-bold text-white">Ngữ pháp hôm nay</h2>
+              <p className="mt-2 text-sm text-violet-100/70">
+                {grammarDue > 0 ? `Bạn có ${grammarDue} cấu trúc cần ôn.` : "Chưa có cấu trúc đến hạn."}
+              </p>
+            </div>
+            <div className="text-3xl text-violet-200 transition group-hover:translate-x-1">→</div>
+          </div>
+        </Link>
+
+        <Link
+          href="/topik/review"
+          className="group rounded-3xl border border-rose-400/25 bg-rose-400/10 p-6 transition hover:-translate-y-1 hover:bg-rose-400/15"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-rose-200">🎯 TOPIK</p>
+              <h2 className="mt-1 text-2xl font-bold text-white">Ôn câu sai</h2>
+              <p className="mt-2 text-sm text-rose-100/70">{topikDue > 0 ? `Bạn có ${topikDue} câu cần ôn.` : "Chưa có câu đến hạn."}</p>
+            </div>
+            <div className="text-3xl text-rose-200 transition group-hover:translate-x-1">→</div>
+          </div>
         </Link>
 
       </div>

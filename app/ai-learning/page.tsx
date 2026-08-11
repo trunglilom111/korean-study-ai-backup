@@ -9,6 +9,7 @@ import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/AppShell";
 import { createClient } from "@/utils/supabase/client";
+import { apiFetch } from "@/utils/api-client";
 import AiTranslate from "@/components/AiTranslate";
 /* =========================================================
    TYPES
@@ -404,7 +405,7 @@ function VocabularyAi({
 
     try {
       const response =
-        await fetch(
+        await apiFetch(
           "/api/ai/vocabulary",
           {
             method:
@@ -527,7 +528,7 @@ function VocabularyAi({
   > {
     try {
       const response =
-        await fetch(
+        await apiFetch(
           `/api/dictionary?q=${encodeURIComponent(
             korean
           )}`
@@ -879,9 +880,10 @@ function VocabularyAi({
       );
   }
 
-  const vocabulary =
-    result?.vocabulary ||
-    [];
+  const vocabulary = useMemo(
+    () => result?.vocabulary || [],
+    [result?.vocabulary]
+  );
 
   const selectedCount =
     selected.size;
@@ -1371,7 +1373,7 @@ function GrammarAi({
           : bookPart;
 
       const response =
-        await fetch(
+        await apiFetch(
           "/api/ai/grammar",
           {
             method:
