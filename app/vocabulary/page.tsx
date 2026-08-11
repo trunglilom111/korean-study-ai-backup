@@ -5,6 +5,9 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/AppShell";
+import VocabularyCollections, {
+  CollectionPicker,
+} from "@/components/VocabularyCollections";
 import { createClient } from "@/utils/supabase/client";
 
 type DictionaryResult = {
@@ -921,6 +924,8 @@ export default function VocabularyPage() {
 
       </div>
 
+      <VocabularyCollections words={words} />
+
       {/* DICTIONARY */}
 
       <div className="mb-8 rounded-3xl border border-slate-800 bg-slate-900 p-5 md:p-7">
@@ -1390,6 +1395,8 @@ export default function VocabularyPage() {
                         ? "🟢 Đã thuộc"
                         : "🟡 Đang học"}
                     </button>
+
+                    <CollectionPicker word={word} />
 
                     <button
                       onClick={() =>

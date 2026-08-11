@@ -3,7 +3,7 @@ import { XMLParser } from "fast-xml-parser";
 import { getAuthenticatedUser } from "@/utils/supabase/auth";
 
 export async function GET(request: NextRequest) {
-  const user = await getAuthenticatedUser();
+  const user = await getAuthenticatedUser(request);
 
   if (!user) {
     return NextResponse.json(

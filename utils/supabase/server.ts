@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { cookies } from "next/headers";
 
-export async function createClient() {
+export async function createClient(request?: Request) {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabasePublishableKey = process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY;
 
@@ -17,6 +17,8 @@ export async function createClient() {
 
   const cookieStore = await cookies();
 
+  const authorization = request?.headers.get("authorization");
+
   return createServerClient(supabaseUrl, supabasePublishableKey, {
     cookies: {
       getAll() {
@@ -28,5 +30,14 @@ export async function createClient() {
         });
       },
     },
+    ...(authorization
+      ? {
+          global: {
+            headers: {
+              Authorization: authorization,
+            },
+          },
+        }
+      : {}),
   });
 }
