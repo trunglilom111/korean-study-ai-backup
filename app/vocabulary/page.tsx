@@ -13,12 +13,16 @@ type DictionaryResult = {
   pronunciation: string;
   partOfSpeech: string;
   level: string;
+  source?: "saved" | "dictionary" | "ai";
+  aiExplanation?: string;
   meanings: {
     koreanDefinition: string;
     vietnamese: string;
     vietnameseDefinition: string;
   }[];
 };
+
+type SearchDirection = "ko-vi" | "vi-ko";
 
 type Word = {
   id: string;
@@ -53,6 +57,64 @@ type LevelFilter =
   | "초급"
   | "중급"
   | "고급";
+
+function detectSearchDirection(value: string): SearchDirection {
+  return /[\uAC00-\uD7A3]/.test(value) ? "ko-vi" : "vi-ko";
+}
+
+function normalizeSearchValue(value: string): string {
+  return value
+    .normalize("NFC")
+    .trim()
+    .toLocaleLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function removeVietnameseAccents(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[đĐ]/g, (character) =>
+      character === "Đ" ? "D" : "d"
+    );
+}
+
+function matchesSearchValue(
+  value: string,
+  query: string
+): boolean {
+  const normalizedValue = normalizeSearchValue(value);
+  const normalizedQuery = normalizeSearchValue(query);
+
+  if (!normalizedQuery) {
+    return false;
+  }
+
+  return (
+    normalizedValue.includes(normalizedQuery) ||
+    removeVietnameseAccents(normalizedValue).includes(
+      removeVietnameseAccents(normalizedQuery)
+    )
+  );
+}
+
+function wordToDictionaryResult(word: Word): DictionaryResult {
+  return {
+    targetCode: word.targetCode || "",
+    word: word.korean,
+    pronunciation: word.pronunciation,
+    partOfSpeech: word.partOfSpeech,
+    level: word.level,
+    source: "saved",
+    meanings: [
+      {
+        koreanDefinition: "",
+        vietnamese: word.meaning,
+        vietnameseDefinition: word.meaning,
+      },
+    ],
+  };
+}
 
 function stringArray(value: unknown): string[] {
   if (!Array.isArray(value)) {
@@ -122,6 +184,9 @@ export default function VocabularyPage() {
 
   const [results, setResults] =
     useState<DictionaryResult[]>([]);
+
+  const [searchStatus, setSearchStatus] =
+    useState("");
 
   const [loading, setLoading] =
     useState(false);
@@ -230,18 +295,58 @@ export default function VocabularyPage() {
    */
 
   async function searchDictionary() {
-    if (!query.trim()) {
+    const trimmedQuery = normalizeSearchValue(query);
+
+    if (!trimmedQuery) {
+      setResults([]);
+      setSearchStatus("Hãy nhập từ hoặc nghĩa cần tìm.");
       return;
     }
 
+    const direction = detectSearchDirection(trimmedQuery);
     setLoading(true);
     setResults([]);
+    setSearchStatus("");
+
+    const localMatches = words
+      .filter((word) => {
+        const fields = [
+          word.korean,
+          word.meaning,
+          ...word.categories,
+        ];
+
+        return fields.some((field) =>
+          matchesSearchValue(field, trimmedQuery)
+        );
+      })
+      .sort((left, right) => {
+        const leftExact = [left.korean, left.meaning].some(
+          (field) =>
+            normalizeSearchValue(field) === trimmedQuery
+        );
+        const rightExact = [right.korean, right.meaning].some(
+          (field) =>
+            normalizeSearchValue(field) === trimmedQuery
+        );
+
+        return Number(rightExact) - Number(leftExact);
+      });
+
+    if (localMatches.length > 0) {
+      setResults(localMatches.map(wordToDictionaryResult));
+      setSearchStatus(
+        `Đã tìm thấy ${localMatches.length} từ trong kho cá nhân.`
+      );
+      setLoading(false);
+      return;
+    }
 
     try {
       const response = await fetch(
         `/api/dictionary?q=${encodeURIComponent(
-          query.trim()
-        )}`
+          trimmedQuery
+        )}&direction=${direction}`
       );
 
       const data =
@@ -256,9 +361,68 @@ export default function VocabularyPage() {
         return;
       }
 
-      setResults(
-        data.results || []
+      const dictionaryResults = (data.results || []).map(
+        (item: DictionaryResult) => ({
+          ...item,
+          source: "dictionary" as const,
+        })
       );
+
+      if (dictionaryResults.length > 0) {
+        setResults(dictionaryResults);
+        setSearchStatus("Kết quả từ Korean Basic Dictionary.");
+        return;
+      }
+
+      const aiResponse = await fetch("/api/ai/translate", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: trimmedQuery,
+          mode: direction,
+          style: "natural",
+          customRequest:
+            "Hãy trả về một từ hoặc cụm từ tiếng Hàn dạng từ điển phù hợp nhất, không dịch thành câu dài.",
+        }),
+      });
+
+      const aiData = await aiResponse.json();
+      const aiWord =
+        aiData.vocabulary?.[0]?.korean ||
+        (direction === "vi-ko" ? aiData.mainTranslation : trimmedQuery);
+      const aiMeaning =
+        aiData.vocabulary?.[0]?.meaning ||
+        (direction === "vi-ko"
+          ? trimmedQuery
+          : aiData.naturalMeaning || aiData.mainTranslation || "");
+
+      if (aiResponse.ok && aiData.ok && aiWord && aiMeaning) {
+        setResults([
+          {
+            targetCode: "",
+            word: aiWord,
+            pronunciation: "",
+            partOfSpeech: "",
+            level: "",
+            source: "ai",
+            aiExplanation: aiData.explanation || "",
+            meanings: [
+              {
+                koreanDefinition: "",
+                vietnamese: aiMeaning,
+                vietnameseDefinition: aiMeaning,
+              },
+            ],
+          },
+        ]);
+        setSearchStatus(
+          "Chưa có kết quả từ điển; Gemini đang cung cấp gợi ý để bạn kiểm tra."
+        );
+      } else {
+        setSearchStatus("Không tìm thấy kết quả phù hợp.");
+      }
     } catch {
       alert(
         "Không thể kết nối từ điển."
@@ -287,15 +451,13 @@ export default function VocabularyPage() {
       return;
     }
 
-    const alreadyExists =
-      words.some(
-        (word) =>
-          word.targetCode ===
-            item.targetCode ||
-          (!word.targetCode &&
-            word.korean ===
-              item.word)
-      );
+    const alreadyExists = words.some((word) => {
+      if (item.targetCode) {
+        return word.targetCode === item.targetCode;
+      }
+
+      return matchesSearchValue(word.korean, item.word);
+    });
 
     if (alreadyExists) {
       alert(
@@ -305,9 +467,8 @@ export default function VocabularyPage() {
       return;
     }
 
-    setSavingCode(
-      item.targetCode
-    );
+    const savingKey = item.targetCode || item.word;
+    setSavingCode(savingKey);
 
     let categories: string[] =
       [];
@@ -320,39 +481,41 @@ export default function VocabularyPage() {
      */
 
     try {
-      const detailResponse =
-        await fetch(
-          `/api/dictionary/detail?code=${encodeURIComponent(
-            item.targetCode
-          )}`
-        );
+      if (item.targetCode && item.source !== "ai") {
+        const detailResponse =
+          await fetch(
+            `/api/dictionary/detail?code=${encodeURIComponent(
+              item.targetCode
+            )}`
+          );
 
-      if (detailResponse.ok) {
-        const detail =
-          await detailResponse.json();
+        if (detailResponse.ok) {
+          const detail =
+            await detailResponse.json();
 
-        categories =
-          detail.categories
-            ?.map(
-              (category: {
-                name: string;
-              }) =>
-                category.name
-            )
-            .filter(Boolean) ||
-          [];
+          categories =
+            detail.categories
+              ?.map(
+                (category: {
+                  name: string;
+                }) =>
+                  category.name
+              )
+              .filter(Boolean) ||
+            [];
 
-        examples =
-          detail.examples
-            ?.map(
-              (example: {
-                text: string;
-              }) =>
-                example.text
-            )
-            .filter(Boolean)
-            .slice(0, 5) ||
-          [];
+          examples =
+            detail.examples
+              ?.map(
+                (example: {
+                  text: string;
+                }) =>
+                  example.text
+              )
+              .filter(Boolean)
+              .slice(0, 5) ||
+            [];
+        }
       }
     } catch {
       /*
@@ -665,6 +828,8 @@ export default function VocabularyPage() {
         "고급"
     ).length;
 
+  const searchDirection = detectSearchDirection(query);
+
   /*
    * =========================================
    * LOADING
@@ -804,6 +969,23 @@ export default function VocabularyPage() {
           </button>
 
         </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-2 text-sm">
+          <span className="rounded-full border border-slate-700 bg-slate-950 px-3 py-1 font-semibold text-slate-200">
+            {searchDirection === "ko-vi" ? "KO → VI" : "VI → KO"}
+          </span>
+          <span className="text-slate-500">
+            {searchDirection === "ko-vi"
+              ? "Nhập Hangul để tìm nghĩa tiếng Việt."
+              : "Nhập tiếng Việt có dấu hoặc không dấu để tìm tiếng Hàn."}
+          </span>
+        </div>
+
+        {searchStatus && (
+          <p className="mt-3 text-sm text-slate-400">
+            {searchStatus}
+          </p>
+        )}
       </div>
 
       {/* SEARCH RESULTS */}
@@ -832,12 +1014,14 @@ export default function VocabularyPage() {
                     .filter(Boolean) ||
                   [];
 
-                const isSaved =
-                  words.some(
-                    (word) =>
-                      word.targetCode ===
-                        item.targetCode
-                  );
+                const isSaved = words.some((word) => {
+                  if (item.targetCode) {
+                    return word.targetCode === item.targetCode;
+                  }
+
+                  return matchesSearchValue(word.korean, item.word);
+                });
+                const resultKey = item.targetCode || item.word;
 
                 return (
                   <div
@@ -869,6 +1053,10 @@ export default function VocabularyPage() {
                                 item.partOfSpeech
                               }
                             </Badge>
+                          )}
+
+                          {item.source === "ai" && (
+                            <Badge>Gemini fallback</Badge>
                           )}
 
                         </div>
@@ -926,6 +1114,12 @@ export default function VocabularyPage() {
                           </p>
                         )}
 
+                        {item.aiExplanation && (
+                          <p className="mt-4 rounded-xl border border-violet-400/20 bg-violet-400/5 p-3 text-sm leading-6 text-violet-100">
+                            ✨ {item.aiExplanation}
+                          </p>
+                        )}
+
                       </div>
 
                       <div className="flex shrink-0 gap-2">
@@ -949,13 +1143,13 @@ export default function VocabularyPage() {
                           }
                           disabled={
                             savingCode ===
-                              item.targetCode ||
+                              resultKey ||
                             isSaved
                           }
                           className="rounded-xl bg-white px-5 py-3 font-bold text-black disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {savingCode ===
-                          item.targetCode
+                          resultKey
                             ? "Đang lưu..."
                             : isSaved
                               ? "✓ Đã lưu"

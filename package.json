@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "api:test": "postman collection run ../postman/collections/korean-study-ai.api.postman_collection.json --environment ../postman/environments/korean-study-ai.local.postman_environment.json -i \"Smoke - no credentials\""
   },
   "dependencies": {
     "@google/genai": "^2.16.0",

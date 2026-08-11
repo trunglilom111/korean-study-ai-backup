@@ -12,7 +12,11 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const query = request.nextUrl.searchParams.get("q");
+  const rawQuery = request.nextUrl.searchParams.get("q") || "";
+  const query = rawQuery
+    .normalize("NFC")
+    .trim()
+    .replace(/\s+/g, " ");
 
   if (!query) {
     return NextResponse.json(
@@ -20,6 +24,23 @@ export async function GET(request: NextRequest) {
       { status: 400 }
     );
   }
+
+  if (query.length > 120) {
+    return NextResponse.json(
+      { error: "Từ cần tìm quá dài" },
+      { status: 400 }
+    );
+  }
+
+  const requestedDirection =
+    request.nextUrl.searchParams.get("direction");
+  const direction =
+    requestedDirection === "ko-vi" ||
+    requestedDirection === "vi-ko"
+      ? requestedDirection
+      : /[\uAC00-\uD7A3]/.test(query)
+        ? "ko-vi"
+        : "vi-ko";
 
   const apiKey = process.env.KOREAN_DICTIONARY_API_KEY;
 
@@ -42,6 +63,13 @@ export async function GET(request: NextRequest) {
     const response = await fetch(url, {
       cache: "no-store",
     });
+
+    if (!response.ok) {
+      return NextResponse.json(
+        { error: "Từ điển không phản hồi" },
+        { status: 502 }
+      );
+    }
 
     const xml = await response.text();
 
@@ -89,12 +117,14 @@ export async function GET(request: NextRequest) {
         pronunciation: item?.pronunciation ?? "",
         partOfSpeech: item?.pos ?? "",
         level: item?.word_grade ?? "",
+        source: "dictionary",
         meanings,
       };
     });
 
     return NextResponse.json({
       query,
+      direction,
       count: results.length,
       results,
     });
