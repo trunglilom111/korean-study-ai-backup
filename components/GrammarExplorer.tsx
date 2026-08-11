@@ -440,17 +440,17 @@ function GrammarPractice({ result }: { result: GrammarResult }) {
     <div className="mt-4 rounded-2xl border border-amber-300/20 bg-amber-300/5 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <p className="text-xs font-bold uppercase tracking-wider text-amber-300">Luyá»‡n ngá»¯ phĂ¡p</p>
-          <p className="mt-1 font-semibold text-white">Äiá»n pháº§n cĂ²n thiáº¿u báº±ng máº«u {result.pattern}</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-amber-300">Luy&#7879;n ng&#7919; ph&#225;p</p>
+          <p className="mt-1 font-semibold text-white">&#272;i&#7873;n ph&#7847;n c&#242;n thi&#7871;u b&#7857;ng m&#7851;u {result.pattern}</p>
         </div>
-        {checked && <span className={isCorrect ? "text-emerald-300" : "text-rose-300"}>{isCorrect ? "ÄĂºng rá»“i" : "Thá»­ láº¡i"}</span>}
+        {checked && <span className={isCorrect ? "text-emerald-300" : "text-rose-300"}>{isCorrect ? "\u0110\u00fang r\u1ed3i" : "Th\u1eed l\u1ea1i"}</span>}
       </div>
       <p className="mt-4 rounded-xl border border-slate-800 bg-slate-950 p-3 text-lg text-slate-100">{blankSentence}</p>
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-        <input value={answer} onChange={(event) => { setAnswer(event.target.value); setChecked(false); }} placeholder="Nháº­p pháº§n cĂ²n thiáº¿u..." className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-amber-300" />
-        <button type="button" onClick={() => setChecked(true)} className="rounded-xl bg-amber-300 px-4 py-2 font-bold text-slate-950">Kiá»ƒm tra</button>
+        <input value={answer} onChange={(event) => { setAnswer(event.target.value); setChecked(false); }} placeholder="Nh\u1eadp ph\u1ea7n c\u00f2n thi\u1ebfu..." className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 outline-none focus:border-amber-300" />
+        <button type="button" onClick={() => setChecked(true)} className="rounded-xl bg-amber-300 px-4 py-2 font-bold text-slate-950">Ki&#7875;m tra</button>
       </div>
-      {checked && !isCorrect && <p className="mt-2 text-sm text-slate-400">ÄĂ¡p Ă¡n tham kháº£o: {expected}</p>}
+      {checked && !isCorrect && <p className="mt-2 text-sm text-slate-400">&#272;&#225;p &#225;n tham kh&#7843;o: {expected}</p>}
     </div>
   );
 }

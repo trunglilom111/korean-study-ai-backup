@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { speakChinese } from "@/utils/chinese-speech";
 import { apiFetch } from "@/utils/api-client";
+import StudyCanvas from "@/components/StudyCanvas";
 
 type StudyStage = {
   id: "foundation" | "hsk1" | "hsk2" | "hsk3" | "hsk4";
@@ -77,6 +78,61 @@ const diagnostic = [
   { question: "Khi nghe một câu chậm, bạn thường…", options: ["Chưa nhận ra từ", "Bắt được vài từ", "Hiểu ý chính"], scores: [0, 1, 2] },
   { question: "Mục tiêu gần nhất của bạn là gì?", options: ["Nói cơ bản", "HSK 1–2", "HSK 3–4"], scores: [0, 1, 2] },
 ];
+
+const toneQuestions = [
+  { hanzi: "妈", pinyin: "mā", meaning: "mẹ", tone: 1 },
+  { hanzi: "麻", pinyin: "má", meaning: "cây gai / tê", tone: 2 },
+  { hanzi: "马", pinyin: "mǎ", meaning: "ngựa", tone: 3 },
+  { hanzi: "骂", pinyin: "mà", meaning: "mắng", tone: 4 },
+  { hanzi: "吗", pinyin: "ma", meaning: "trợ từ hỏi", tone: 0 },
+];
+
+function ToneTrainer() {
+  const [index, setIndex] = useState(0);
+  const [score, setScore] = useState(0);
+  const [selected, setSelected] = useState<number | null>(null);
+  const current = toneQuestions[index];
+
+  function chooseTone(tone: number) {
+    if (selected !== null) return;
+    setSelected(tone);
+    if (tone === current.tone) setScore((value) => value + 1);
+  }
+
+  function nextQuestion() {
+    setIndex((value) => (value + 1) % toneQuestions.length);
+    setSelected(null);
+  }
+
+  return (
+    <div className="rounded-3xl border border-rose-300/20 bg-slate-950/60 p-5 md:p-7">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs font-bold uppercase tracking-[0.16em] text-rose-300">TONE TRAINER</p>
+          <h3 className="mt-2 text-2xl font-black text-white">Nghe, nhìn và nhận diện thanh điệu</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-400">Bấm phát âm, chọn thanh đúng rồi chuyển sang âm tiết tiếp theo.</p>
+        </div>
+        <span className="rounded-xl bg-rose-500/15 px-3 py-2 text-sm font-bold text-rose-200">Điểm: {score}/{toneQuestions.length}</span>
+      </div>
+      <div className="mt-6 grid gap-5 md:grid-cols-[0.8fr_1.2fr] md:items-center">
+        <div className="rounded-2xl border border-rose-300/20 bg-rose-950/20 p-6 text-center">
+          <p lang="zh" className="chinese-text text-7xl font-black text-white">{current.hanzi}</p>
+          <p className="mt-2 text-2xl font-bold text-rose-200">{current.pinyin}</p>
+          <button type="button" onClick={() => speakChinese(current.hanzi)} className="mt-5 rounded-xl bg-rose-400 px-4 py-2.5 font-bold text-rose-950">🔊 Nghe âm</button>
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-slate-300">Âm này có thanh số mấy?</p>
+          <div className="mt-3 grid grid-cols-5 gap-2">
+            {[1, 2, 3, 4, 0].map((tone) => (
+              <button key={tone} type="button" onClick={() => chooseTone(tone)} className={`rounded-xl border px-3 py-3 text-sm font-bold transition ${selected === null ? "border-slate-700 bg-slate-900 text-slate-200 hover:border-rose-300" : tone === current.tone ? "border-emerald-300 bg-emerald-400/15 text-emerald-200" : selected === tone ? "border-rose-300 bg-rose-400/15 text-rose-200" : "border-slate-800 bg-slate-950 text-slate-500"}`}>{tone === 0 ? "轻" : tone}</button>
+            ))}
+          </div>
+          {selected !== null && <div className="mt-4 flex flex-wrap items-center justify-between gap-3"><p className={selected === current.tone ? "text-emerald-300" : "text-rose-200"}>{selected === current.tone ? "Chính xác!" : `Đáp án đúng: ${current.tone === 0 ? "thanh nhẹ" : `thanh ${current.tone}`}`}</p><button type="button" onClick={nextQuestion} className="rounded-xl bg-white px-4 py-2 text-sm font-bold text-slate-950">Câu tiếp theo →</button></div>}
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function suggestedStage(score: number) {
   if (score <= 2) return stages[0];
@@ -171,6 +227,12 @@ export default function ChineseStudyPage() {
       <section id="gemini" className="border-y border-violet-300/15 bg-[#0b1022]"><div className="mx-auto grid max-w-7xl gap-8 px-5 py-14 md:px-10 md:py-20 lg:grid-cols-[0.9fr_1.1fr]"><div><p className="text-sm font-bold uppercase tracking-[0.16em] text-violet-300">GEMINI STUDY LAB</p><h2 className="mt-2 text-3xl font-black text-white md:text-4xl">Tạo bộ học tiếng Trung theo đúng mục tiêu.</h2><p className="mt-4 max-w-xl leading-7 text-slate-400">Gemini tạo từ mới, phiên âm đủ dấu thanh, câu ví dụ, dịch nghĩa và mẹo nhớ bằng tiếng Việt. Tất cả là nội dung luyện tập mới, không phải danh sách HSK chính thức.</p><div className="mt-8 space-y-5 rounded-3xl border border-violet-400/20 bg-violet-950/10 p-6"><label className="block text-sm font-medium text-slate-300"><span className="mb-2 block">Mục tiêu</span><select value={aiLevel} onChange={(event) => setAiLevel(event.target.value)} className="form-control"><option>HSK 1</option><option>HSK 2</option><option>HSK 3</option><option>HSK 4</option></select></label><label className="block text-sm font-medium text-slate-300"><span className="mb-2 block">Chủ đề muốn học</span><input value={aiTopic} onChange={(event) => setAiTopic(event.target.value)} maxLength={180} placeholder="Ví dụ: phỏng vấn xin việc, du lịch, sở thích..." className="form-control" /></label><label className="block text-sm font-medium text-slate-300"><span className="mb-2 block">Số từ trong bộ học</span><select value={aiCount} onChange={(event) => setAiCount(Number(event.target.value))} className="form-control"><option value={12}>12 từ · khởi động</option><option value={20}>20 từ · một buổi học</option><option value={30}>30 từ · ôn chuyên đề</option></select></label>{generationError && <p className="rounded-xl border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">{generationError}</p>}<button type="button" onClick={generateGeminiDeck} disabled={generating} className="rounded-xl bg-violet-300 px-5 py-3 font-bold text-violet-950 transition hover:bg-violet-200 disabled:cursor-not-allowed disabled:opacity-50">{generating ? "Gemini đang tạo bộ học..." : "Tạo bộ học với Gemini"}</button></div><p className="mt-4 text-xs leading-5 text-slate-500">Cần đăng nhập và cấu hình <code>GEMINI_API_KEY</code> trong <code>.env.local</code>. Một khóa Gemini dùng chung được cho cả tiếng Trung và TOPIK; khóa không bao giờ hiển thị ở trình duyệt.</p></div>
         <article className="min-h-[500px] rounded-[2rem] border border-slate-800 bg-slate-900/70 p-6 md:p-8">{currentAiWord ? <><p className="text-xs font-bold uppercase tracking-[0.16em] text-violet-300">{aiTitle}</p><h3 className="mt-2 text-lg font-bold text-white">{aiDescription}</h3><div className="mt-6 grid grid-cols-3 gap-2 sm:grid-cols-4">{aiWords.map((word, index) => <button key={`${word.hanzi}-${index}`} type="button" onClick={() => chooseAiWord(index)} className={`rounded-xl border px-3 py-2 text-left transition ${aiWordIndex === index ? "border-violet-300 bg-violet-500/20" : "border-slate-700 bg-slate-950/50 hover:border-slate-500"}`}><span lang="zh" className="chinese-text text-lg font-bold text-white">{word.hanzi}</span><span className="block text-[11px] text-slate-400">{index + 1}</span></button>)}</div><div className="mt-7 rounded-3xl border border-violet-300/20 bg-[radial-gradient(circle_at_80%_10%,rgba(167,139,250,0.16),transparent_36%),#090d1d] p-6"><div className="flex flex-wrap items-start justify-between gap-4"><div><p lang="zh" className="chinese-text text-5xl font-black text-white">{currentAiWord.hanzi}</p><p className="mt-2 text-xl font-semibold text-violet-200">{currentAiWord.pinyin}</p><p className="mt-2 text-xs uppercase tracking-wider text-slate-500">{currentAiWord.partOfSpeech}</p></div><button type="button" onClick={() => speakChinese(currentAiWord.hanzi)} className="rounded-xl border border-violet-300/30 px-3 py-2 text-sm font-bold text-violet-100 hover:bg-violet-500/15">Nghe</button></div>{showAiMeaning ? <div className="mt-6 space-y-4 border-t border-slate-700 pt-5"><p className="font-bold text-white">{currentAiWord.meaning}</p><div><p lang="zh" className="chinese-text text-slate-200">{currentAiWord.exampleChinese}</p><p className="mt-1 text-sm text-violet-200">{currentAiWord.examplePinyin}</p><p className="mt-1 text-sm text-slate-400">{currentAiWord.exampleVietnamese}</p></div><p className="rounded-xl bg-violet-500/10 p-3 text-sm leading-6 text-violet-100">Mẹo nhớ: {currentAiWord.memoryTip}</p></div> : <p className="mt-6 text-sm text-slate-400">Đoán nghĩa, rồi lật thẻ để xem ví dụ và mẹo nhớ.</p>}<button type="button" onClick={() => setShowAiMeaning((value) => !value)} className="mt-6 rounded-xl bg-white px-4 py-2.5 text-sm font-bold text-slate-950 hover:bg-violet-100">{showAiMeaning ? "Ẩn đáp án" : "Lật đáp án"}</button></div></> : <div className="flex min-h-[430px] flex-col justify-center"><span className="grid h-14 w-14 place-items-center rounded-2xl bg-violet-400/15 text-2xl text-violet-200">✦</span><h3 className="mt-6 text-2xl font-bold text-white">Bộ học cá nhân sẽ hiện ở đây.</h3><p className="mt-3 max-w-md leading-7 text-slate-400">Chọn trình độ và chủ đề ở bên trái. Gemini sẽ tạo thẻ từ vựng có thể nghe, lật và ôn từng từ.</p><ul className="mt-7 space-y-3 text-sm text-slate-400"><li>• HSK 1–4 và chủ đề tự chọn</li><li>• Pinyin có dấu thanh</li><li>• Ví dụ, dịch nghĩa, mẹo nhớ tiếng Việt</li></ul></div>}</article></div></section>
       <footer className="mx-auto max-w-7xl px-5 py-10 text-sm leading-6 text-slate-500 md:px-10">Gợi ý nhịp ôn: học mới 20–30 phút, ôn lại sau 1 ngày · 3 ngày · 7 ngày. Khi lên HSK 3–4, hãy giữ một sổ lỗi riêng cho thanh điệu, từ vựng và mẫu câu thường sai.</footer>
+      <section id="thanh-dieu" className="border-y border-rose-300/15 bg-[#0b1022]">
+        <div className="mx-auto max-w-7xl px-5 py-14 md:px-10 md:py-20">
+          <ToneTrainer />
+          <StudyCanvas title="Canvas luyện Hán tự" storageKey="korean-study-chinese-canvas" />
+        </div>
+      </section>
     </main>
   );
 }
