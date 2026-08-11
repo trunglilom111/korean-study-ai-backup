@@ -5,6 +5,8 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/AppShell";
+import GrammarExplorer from "@/components/GrammarExplorer";
+import StudyCanvas from "@/components/StudyCanvas";
 import { createClient } from "@/utils/supabase/client";
 
 type GrammarStatus = "learning" | "mastered";
@@ -1123,6 +1125,13 @@ export default function GrammarPage() {
         />
 
       </div>
+
+      <GrammarExplorer />
+
+      <StudyCanvas
+        title="Bảng viết ngữ pháp"
+        storageKey="korean-study-grammar-canvas"
+      />
 
       {/* =====================================
           FORM

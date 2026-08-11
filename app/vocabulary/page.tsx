@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 import AppShell from "@/components/AppShell";
+import CommunityCollections from "@/components/CommunityCollections";
 import VocabularyCollections, {
   CollectionPicker,
 } from "@/components/VocabularyCollections";
@@ -925,6 +926,8 @@ export default function VocabularyPage() {
       </div>
 
       <VocabularyCollections words={words} />
+
+      <CommunityCollections />
 
       {/* DICTIONARY */}
 

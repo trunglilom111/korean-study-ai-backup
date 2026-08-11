@@ -17,6 +17,7 @@ type CollectionRow = {
   visibility: string;
   created_at: string;
   updated_at: string;
+  copied_from_id?: string | null;
 };
 
 function databaseErrorResponse(error: {
@@ -59,7 +60,7 @@ export async function GET(request: Request) {
   const { data, error } = await supabase
     .from("vocabulary_collections")
     .select(
-      "id,title,description,visibility,created_at,updated_at"
+      "id,title,description,visibility,created_at,updated_at,copied_from_id"
     )
     .eq("owner_id", user.id)
     .order("updated_at", { ascending: false });
@@ -135,7 +136,7 @@ export async function POST(request: Request) {
       visibility: normalizeCollectionVisibility(visibilityValue),
     })
     .select(
-      "id,title,description,visibility,created_at,updated_at"
+      "id,title,description,visibility,created_at,updated_at,copied_from_id"
     )
     .single();
 

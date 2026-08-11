@@ -62,6 +62,7 @@ export function serializeCollection(row: {
   visibility: string;
   created_at: string;
   updated_at: string;
+  copied_from_id?: string | null;
 }) {
   return {
     id: row.id,
@@ -70,6 +71,7 @@ export function serializeCollection(row: {
     visibility: normalizeCollectionVisibility(row.visibility),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
+    copiedFromId: row.copied_from_id || null,
   };
 }
 

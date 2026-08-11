@@ -36,6 +36,12 @@ const menu = [
   },
 
   {
+    href: "/notes",
+    icon: "📓",
+    name: "Sổ tay",
+  },
+
+  {
     href: "/ai-learning",
     icon: "✨",
     name: "Học liệu AI",

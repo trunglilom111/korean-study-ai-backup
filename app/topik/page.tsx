@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import StudyCanvas from "@/components/StudyCanvas";
 import { createClient } from "@/utils/supabase/client";
 import { getKoreanVoices, speakKorean } from "@/utils/speech";
 
@@ -888,6 +889,11 @@ export default function TopikPage() {
             <StrategyCard title="3. Viết" eyebrow="WRITING" color="violet" items={["Lập khung: quan điểm → lý do → ví dụ → kết luận.", "Dành 2 phút cuối để sửa trợ từ và khoảng cách.", "Dùng checklist trong mỗi câu viết để tự rà bài."]} />
           </section>
         )}
+
+        <StudyCanvas
+          title="Bảng ghi chú khi làm TOPIK"
+          storageKey="korean-study-topik-canvas"
+        />
 
         {activeExam && current && (
           <section id="exam-room" className="mt-10 scroll-mt-5 rounded-[2rem] border border-amber-300/25 bg-slate-900 p-5 shadow-2xl shadow-black/20 md:p-8">
