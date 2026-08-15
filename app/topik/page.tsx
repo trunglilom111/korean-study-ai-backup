@@ -4,10 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import PersonalTopikGoal from "@/components/PersonalTopikGoal";
 import StudyCanvas from "@/components/StudyCanvas";
 import { createClient } from "@/utils/supabase/client";
 import { apiFetch } from "@/utils/api-client";
 import { getKoreanVoices, speakKorean } from "@/utils/speech";
+import { isTopikPersonalAdmin } from "@/utils/topik-personal-plan";
 
 type Skill = "listening" | "reading" | "writing";
 type Workspace = "library" | "ai" | "strategy";
@@ -540,6 +542,7 @@ export default function TopikPage() {
   const router = useRouter();
   const [supabase] = useState(() => createClient());
   const [words, setWords] = useState<VocabularyRow[]>([]);
+  const [userEmail, setUserEmail] = useState("");
   const [authReady, setAuthReady] = useState(false);
   const [workspace, setWorkspace] = useState<Workspace>("library");
   const [activeExam, setActiveExam] = useState<PracticeExam | null>(null);
@@ -579,6 +582,8 @@ export default function TopikPage() {
         router.replace("/login");
         return;
       }
+
+      setUserEmail(user.email || "");
 
       const { data, error } = await supabase
         .from("vocabulary")
@@ -935,6 +940,8 @@ export default function TopikPage() {
             </div>
           </div>
         </section>
+
+        {isTopikPersonalAdmin(userEmail) && <PersonalTopikGoal />}
 
         <div className="mt-4 flex justify-end">
           <Link href="/topik/review" className="rounded-xl border border-rose-400/30 bg-rose-400/10 px-4 py-2.5 text-sm font-semibold text-rose-200 transition hover:bg-rose-400/15">
