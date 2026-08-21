@@ -38,6 +38,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Local TOPIK import artifacts (large licensed datasets and generated batches)
+/.topik-import/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

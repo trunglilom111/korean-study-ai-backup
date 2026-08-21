@@ -7,6 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "topik:verify": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types utils/topik-master/study-brain.test.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types utils/topik-master/import-pipeline.test.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types utils/topik-master/security.test.ts && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types utils/topik-master/performance.test.ts",
+    "topik:smoke": "node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types utils/topik-master/smoke.test.ts",
+    "topik:prepare-krdict": "node --max-old-space-size=2048 --disable-warning=MODULE_TYPELESS_PACKAGE_JSON --experimental-strip-types scripts/topik-master/prepare-krdict-import.ts",
     "api:test": "postman collection run ../postman/collections/korean-study-ai.api.postman_collection.json --environment ../postman/environments/korean-study-ai.local.postman_environment.json -i \"Smoke - no credentials\""
   },
   "dependencies": {
@@ -24,9 +27,11 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/yauzl": "^3.4.0",
     "eslint": "^9",
     "eslint-config-next": "16.3.0",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "yauzl": "^3.4.0"
   }
 }

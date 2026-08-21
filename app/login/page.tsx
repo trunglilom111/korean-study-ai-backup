@@ -61,7 +61,11 @@ export default function LoginPage() {
         setMessage("✅ Đăng nhập thành công!");
 
         setTimeout(() => {
-          router.push("/");
+          const requestedPath = new URLSearchParams(window.location.search).get("next");
+          const safePath = requestedPath?.startsWith("/") && !requestedPath.startsWith("//")
+            ? requestedPath
+            : "/";
+          router.push(safePath);
           router.refresh();
         }, 700);
       }
