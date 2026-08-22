@@ -15,6 +15,7 @@ const explanationSchema = {
     importantGrammar: { type: "array", items: { type: "string" } },
     trap: { type: "string" },
     topikTip: { type: "string" },
+    optionReasons: { type: "array", items: { type: "object", properties: { index: { type: "integer" }, option: { type: "string" }, correct: { type: "boolean" }, reason: { type: "string" } }, required: ["index", "option", "correct", "reason"] } },
     similarQuestion: {
       type: "object",
       properties: {
@@ -26,7 +27,7 @@ const explanationSchema = {
       required: ["prompt", "options", "answerIndex", "explanation"],
     },
   },
-  required: ["correct", "errorType", "explanationVi", "whyUserAnswerWrong", "importantVocabulary", "importantGrammar", "trap", "topikTip", "similarQuestion"],
+  required: ["correct", "errorType", "explanationVi", "whyUserAnswerWrong", "importantVocabulary", "importantGrammar", "trap", "topikTip", "optionReasons", "similarQuestion"],
 };
 
 function stringArray(value: unknown) {
@@ -67,6 +68,7 @@ export async function POST(request: Request) {
     importantGrammar: [],
     trap: `Bẫy thường gặp của dạng ${question.subskill} là chọn chi tiết có xuất hiện nhưng không trả lời đúng trọng tâm.`,
     topikTip: "Xác định loại câu hỏi trước, sau đó ghi lại 1–2 từ khóa quyết định.",
+    optionReasons: options.map((option, index) => ({ index, option, correct: index === correctIndex, reason: index === correctIndex ? "Khớp với đáp án và giải thích đã kiểm duyệt." : "Không trả lời đúng trọng tâm hoặc mâu thuẫn với dữ kiện chính." })),
     similarQuestion: {
       prompt: `연습: ${question.prompt}`,
       options,
@@ -113,6 +115,7 @@ GIẢI THÍCH ĐÃ KIỂM DUYỆT: ${question.explanation_vi}
 Yêu cầu:
 - Giải thích bằng tiếng Việt, không bịa audio hoặc chi tiết không có trong dữ liệu.
 - Chỉ ra bẫy và mẹo làm dạng câu này.
+- Giải thích riêng tại sao từng phương án đúng hoặc sai trong optionReasons, giữ nguyên index 0-based.
 - Trích tối đa 5 từ/cụm từ và 3 điểm ngữ pháp thực sự liên quan.
 - Tạo đúng 1 câu luyện tương tự nguyên gốc, 4 lựa chọn và answerIndex 0-based.
 - similarQuestion không được sao chép câu TOPIK chính thức.

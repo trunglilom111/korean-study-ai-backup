@@ -7,6 +7,8 @@ import { preloadSpeechVoices, speakKorean } from "@/utils/speech";
 import type {
   AiQuestionExplanation,
   DashboardData,
+  GrammarComparison,
+  GrammarProgressState,
   PlannerTask,
   PracticeSession,
   ResultMistake,
@@ -22,7 +24,7 @@ const recommendations = [
   { icon: "✍️", title: "Viết câu 54", subtitle: "Chủ đề môi trường", tone: "violet", screen: "Viết bài" },
 ] as const;
 
-type Screen = "Home" | "Dashboard" | "Học tập" | "Reading" | "Vocabulary" | "Bộ từ cá nhân" | "Grammar" | "TOPIK Practice" | "Ngân hàng câu hỏi" | "Làm bài" | "Viết bài" | "Kết quả" | "Ôn tập" | "Kế hoạch" | "Cộng đồng" | "Cá nhân";
+type Screen = "Home" | "Dashboard" | "Tìm kiếm" | "Học tập" | "Reading" | "Vocabulary" | "Bộ từ cá nhân" | "Grammar" | "TOPIK Practice" | "Ngân hàng câu hỏi" | "Làm bài" | "Viết bài" | "Kết quả" | "Ôn tập" | "Kế hoạch" | "Cộng đồng" | "Cá nhân";
 type TopikMasterProfile = {
   display_name: string;
   current_level: string;
@@ -102,6 +104,7 @@ type VocabularyCollectionItem = {
 };
 
 type QuestionBankTerm = { id: string; lemma?: string; pattern?: string; meaning_vi?: string | null; topik_level?: string | null };
+type ReadingAnalysis = { sentence: string; translationVi: string; structure: string; tokens: string[]; vocabulary: Array<{ id: string; lemma: string; meaning_vi: string | null }>; grammar: Array<{ id: string; pattern: string; meaning_vi: string | null; usage_vi?: string | null }>; topikTip: string };
 type QuestionBankItem = {
   id: string;
   question_id: string;
@@ -252,6 +255,7 @@ function localPracticeSession(mode: "practice" | "timed" = "practice"): Practice
 const navItems: { icon: string; label: Screen }[] = [
   { icon: "⌂", label: "Home" },
   { icon: "▦", label: "Dashboard" },
+  { icon: "⌕", label: "Tìm kiếm" },
   { icon: "▣", label: "Học tập" },
   { icon: "▥", label: "Bộ từ cá nhân" },
   { icon: "▶", label: "TOPIK Practice" },
@@ -306,18 +310,20 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
   const [audioDuration, setAudioDuration] = useState(0);
   const [replayCount, setReplayCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [flags, setFlags] = useState<Set<string>>(new Set());
+  const [readingAnalysis, setReadingAnalysis] = useState<ReadingAnalysis | null>(null);
+  const [analyzingReading, setAnalyzingReading] = useState(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const warnedTenMinutes = useRef(false);
   const finishRef = useRef<() => void>(() => undefined);
   const autosaveState = useRef({ answers, responseTimes, current, secondsLeft });
   const question = session.questions[current];
   const isListening = question.skill === "listening";
+  const isReading = question.skill === "reading";
 
   useEffect(() => {
     window.speechSynthesis?.cancel();
     audioRef.current?.pause();
-    setAudioPlaying(false);
-    setAudioTime(0);
-    setReplayCount(0);
     return () => window.speechSynthesis?.cancel();
   }, [question.id]);
 
@@ -419,8 +425,23 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
     return () => window.clearInterval(autosave);
   }, [session.id, session.persisted]);
 
-  const finish = async () => {
+  useEffect(() => {
+    if (!session.persisted) return;
+    void apiFetch(`/api/topik-master/practice/${session.id}/flag`).then(async (response) => response.ok ? response.json() : null).then((payload) => {
+      if (payload?.questionIds) setFlags(new Set(payload.questionIds as string[]));
+    }).catch(() => undefined);
+  }, [session.id, session.persisted]);
+
+  useEffect(() => {
+    if (session.mode !== "timed" || secondsLeft > 600 || secondsLeft <= 0 || warnedTenMinutes.current) return;
+    warnedTenMinutes.current = true;
+    setNotice("Còn 10 phút. Hãy kiểm tra các câu chưa trả lời và câu đã đánh dấu.");
+  }, [secondsLeft, session.mode, setNotice]);
+
+  const finish = async (force = false) => {
     if (submitting) return;
+    const unanswered = session.questions.length - Object.keys(answers).length;
+    if (!force && session.mode === "timed" && unanswered > 0 && !window.confirm(`Bạn còn ${unanswered} câu chưa trả lời. Vẫn nộp bài?`)) return;
     setSubmitting(true);
     if (session.persisted) {
       const saved = await save();
@@ -457,7 +478,7 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
     });
     onComplete({ correct, total, score: Math.round((correct / total) * 300), accuracy: Math.round((correct / total) * 100), examTitle: session.exam.title, mistakes, persisted: false });
   };
-  finishRef.current = () => { void finish(); };
+  useEffect(() => { finishRef.current = () => { void finish(true); }; });
 
   useEffect(() => {
     if (secondsLeft !== 0 || submitting) return;
@@ -470,6 +491,9 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
     setSpeaking(false);
     audioRef.current?.pause();
     setAudioPlaying(false);
+    setAudioTime(0);
+    setReplayCount(0);
+    setReadingAnalysis(null);
     setCurrent(index);
     void save(answers, index, secondsLeft);
   };
@@ -490,6 +514,25 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
     else moveTo(current + 1);
   };
 
+  const toggleFlag = async () => {
+    const flagged = !flags.has(question.id);
+    setFlags((currentFlags) => { const nextFlags = new Set(currentFlags); if (flagged) nextFlags.add(question.id); else nextFlags.delete(question.id); return nextFlags; });
+    if (session.persisted) await apiFetch(`/api/topik-master/practice/${session.id}/flag`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ questionId: question.id, flagged }) });
+    setNotice(flagged ? `Đã đánh dấu câu ${current + 1}.` : `Đã bỏ đánh dấu câu ${current + 1}.`);
+  };
+
+  const analyzeReading = async (sentence: string) => {
+    if (session.mode !== "practice") return;
+    setAnalyzingReading(true);
+    const response = await apiFetch("/api/topik-master/reading-analyze", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ questionId: question.id, sentence }) });
+    const payload = await response.json();
+    if (response.ok && payload.analysis) setReadingAnalysis(payload.analysis as ReadingAnalysis);
+    else setNotice(payload.error || "Chưa thể phân tích câu Reading này.");
+    setAnalyzingReading(false);
+  };
+
+  const passageSentences = question.passage?.match(/[^.!?。]+[.!?。]?/g)?.map((sentence) => sentence.trim()).filter(Boolean) || [];
+
   const timerText = `${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`;
   const audioTimeText = `${Math.floor(audioTime / 60)}:${String(Math.floor(audioTime % 60)).padStart(2, "0")}`;
   const audioDurationText = `${Math.floor(audioDuration / 60)}:${String(Math.floor(audioDuration % 60)).padStart(2, "0")}`;
@@ -500,13 +543,15 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
       <div className={styles.workspaceGrid}>
         <aside className={styles.questionRail} aria-label="Danh sách câu hỏi">
           {session.questions.map((item, index) => (
-            <button key={item.id} aria-current={index === current ? "step" : undefined} aria-label={`Câu ${index + 1}${answers[item.id] !== undefined ? ", đã trả lời" : ""}`} className={index === current ? styles.currentQuestion : answers[item.id] !== undefined ? styles.doneQuestion : ""} onClick={() => moveTo(index)}>{index + 1}</button>
+            <button key={item.id} aria-current={index === current ? "step" : undefined} aria-label={`Câu ${index + 1}${answers[item.id] !== undefined ? ", đã trả lời" : ""}${flags.has(item.id) ? ", đã đánh dấu" : ""}`} className={`${index === current ? styles.currentQuestion : answers[item.id] !== undefined ? styles.doneQuestion : ""} ${flags.has(item.id) ? styles.flaggedQuestion : ""}`} onClick={() => moveTo(index)}>{flags.has(item.id) ? "⚑" : index + 1}</button>
           ))}
         </aside>
         <article className={styles.practicePanel}>
-          <div className={styles.practiceTop}><div><b>Câu {current + 1} / {session.questions.length}</b><span>{session.persisted ? "Đang autosave" : "Local fallback"} · {question.subskill}</span></div><time>{timerText}</time><button onClick={() => setNotice(`Đã trả lời ${Object.keys(answers).length}/${session.questions.length} câu.`)}>Bản đồ câu hỏi</button></div>
+          <div className={styles.practiceTop}><div><b>Câu {current + 1} / {session.questions.length}</b><span>{session.persisted ? "Đang autosave" : "Local fallback"} · {question.subskill}</span></div><time>{timerText}</time><button onClick={() => void toggleFlag()}>{flags.has(question.id) ? "⚑ Bỏ cờ" : "⚐ Đánh dấu"}</button>{session.mode === "timed" && <button onClick={() => void document.documentElement.requestFullscreen?.()}>Toàn màn hình</button>}<button onClick={() => setNotice(`Đã trả lời ${Object.keys(answers).length}/${session.questions.length} câu · đánh dấu ${flags.size} câu.`)}>Bản đồ câu hỏi</button></div>
           <div className={styles.practiceProgress}><i style={{ width: `${((current + 1) / session.questions.length) * 100}%` }} /></div>
-          {question.passage && <div className={styles.questionPassage}>{question.passage}</div>}
+          {question.passage && (!isReading || session.mode === "timed") && <div className={styles.questionPassage}>{question.passage}</div>}
+          {question.passage && isReading && session.mode === "practice" && <div className={styles.readingPassage}><strong>Chạm vào từng câu để phân tích</strong><p>{passageSentences.map((sentence) => <button key={sentence} disabled={analyzingReading} onClick={() => void analyzeReading(sentence)}>{sentence}</button>)}</p></div>}
+          {readingAnalysis && session.mode === "practice" && <aside className={styles.readingAnalysis}><button aria-label="Đóng phân tích" onClick={() => setReadingAnalysis(null)}>×</button><h3>Phân tích câu</h3><b>{readingAnalysis.sentence}</b><p><strong>Dịch:</strong> {readingAnalysis.translationVi}</p><p><strong>Cấu trúc:</strong> {readingAnalysis.structure}</p><div><strong>Tách từ:</strong>{readingAnalysis.tokens.map((token, index) => <span key={`${token}-${index}`}>{token}</span>)}</div>{readingAnalysis.vocabulary.length > 0 && <div><strong>Từ TOPIK:</strong>{readingAnalysis.vocabulary.map((word) => <span key={word.id}>{word.lemma} — {word.meaning_vi}</span>)}</div>}{readingAnalysis.grammar.length > 0 && <div><strong>Ngữ pháp:</strong>{readingAnalysis.grammar.map((grammar) => <span key={grammar.id}>{grammar.pattern} — {grammar.meaning_vi}</span>)}</div>}<small>💡 {readingAnalysis.topikTip}</small></aside>}
           {isListening && question.audioUrl && <div className={styles.realAudioPlayer}>
             <audio ref={audioRef} key={question.audioUrl} preload="metadata" src={question.audioUrl} onLoadedMetadata={(event) => setAudioDuration(event.currentTarget.duration || question.audioDurationSeconds || 0)} onTimeUpdate={(event) => setAudioTime(event.currentTarget.currentTime)} onEnded={() => setAudioPlaying(false)}>Trình duyệt không hỗ trợ audio.</audio>
             <div className={styles.audioControls}><button onClick={() => void toggleAudio()}>{audioPlaying ? "Ⅱ Tạm dừng" : audioTime > 0 ? "↻ Phát lại" : "▶ Phát audio"}</button><div><span>{audioTimeText}</span><progress max={audioDuration || 1} value={audioTime} /><span>{audioDurationText}</span></div>{session.mode === "practice" ? <label><span>Tốc độ</span><select value={speechRate} onChange={(event) => { const rate = Number(event.target.value); setSpeechRate(rate); if (audioRef.current) audioRef.current.playbackRate = rate; }}><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option></select></label> : <b>1× cố định</b>}</div>
@@ -532,8 +577,17 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
   );
 }
 
+const writingTasks = {
+  51: { key: "writing-51-email", title: "Câu 51 · Điền câu", prompt: "친구에게 보내는 이메일입니다. 빈칸에 알맞은 말을 쓰십시오.\n민수 씨, 안녕하세요? 이번 주 토요일에 시간이 있으면 같이 영화를 (      ). 답장을 기다리겠습니다.", min: 5, max: 60, requirement: "Hoàn thành câu đúng ngữ cảnh và kính ngữ.", sample: "보러 갈까요" },
+  52: { key: "writing-52-notice", title: "Câu 52 · Hoàn thành đoạn", prompt: "다음 글의 빈칸에 알맞은 문장을 쓰십시오.\n도서관 이용자가 늘면서 자리가 부족해졌습니다. 그래서 다음 달부터 좌석 예약 제도를 (      ).", min: 10, max: 100, requirement: "Viết một câu nối logic với nguyên nhân phía trước.", sample: "실시할 예정입니다" },
+  53: { key: "writing-53-chart", title: "Câu 53 · Mô tả biểu đồ", prompt: "다음은 직장인의 출근 교통수단에 대한 조사 결과입니다. 표의 내용을 200~300자로 쓰십시오.", min: 200, max: 300, requirement: "Nêu số liệu, so sánh và xu hướng; không thêm ý kiến cá nhân.", sample: "직장인의 출근 교통수단을 조사한 결과 지하철이 42%로 가장 높게 나타났다. 그다음은 버스 28%, 자가용 20% 순이었다. 자전거와 도보는 각각 6%와 4%로 비교적 낮았다. 대중교통 이용 비율은 전체의 70%로, 개인 교통수단보다 훨씬 높았다." },
+  54: { key: "writing-54-environment", title: "Câu 54 · Bài luận", prompt: "환경 보호는 우리 모두의 미래를 위해 매우 중요합니다. 일회용품 사용을 줄이고 환경 보호를 실천할 수 있는 방법에 대해 쓰십시오.", min: 600, max: 700, requirement: "Viết rõ mở bài, luận điểm, ví dụ và kết luận.", sample: "환경 보호는 우리 모두의 미래를 위해 매우 중요합니다. 최근 일회용품 사용 줄이기, 분리수거 생활화, 대중교통 이용 등 다양한 활동이 진행되고 있습니다.\n\n저는 일상생활에서 텀블러 사용하기, 플라스틱 제품 사용 줄이기, 가까운 거리는 걷거나 자전거 이용하기 등을 실천하고 있습니다." },
+} as const;
+
 function ExamScreen({ setNotice }: { setNotice: (message: string) => void }) {
-  const promptText = "환경 보호는 우리 모두의 미래를 위해 매우 중요합니다. 일회용품 사용을 줄이고 환경 보호를 실천할 수 있는 방법에 대해 쓰십시오.";
+  const [writingQuestion, setWritingQuestion] = useState<keyof typeof writingTasks>(54);
+  const task = writingTasks[writingQuestion];
+  const promptText = task.prompt;
   const [writing, setWriting] = useState("환경 보호는 우리 모두의 미래를 위해 매우 중요합니다. 최근 일회용품 사용 줄이기, 분리수거 생활화, 대중교통 이용 등 다양한 활동이 진행되고 있습니다.\n\n저는 일상생활에서 텀블러 사용하기, 플라스틱 제품 사용 줄이기, 가까운 거리는 걷거나 자전거 이용하기 등을 실천하고 있습니다.");
   const [saving, setSaving] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
@@ -541,19 +595,25 @@ function ExamScreen({ setNotice }: { setNotice: (message: string) => void }) {
 
   useEffect(() => {
     let active = true;
-    void apiFetch("/api/topik-master/writing-draft?promptKey=writing-54-environment")
+    void apiFetch(`/api/topik-master/writing-draft?promptKey=${task.key}`)
       .then(async (response) => response.ok ? response.json() : null)
       .then((payload) => { if (active && payload?.draft?.response_text) setWriting(payload.draft.response_text); })
       .catch(() => undefined);
     return () => { active = false; };
-  }, []);
+  }, [task.key, task.sample]);
+
+  const changeWritingQuestion = (number: keyof typeof writingTasks) => {
+    setFeedback(null);
+    setWriting(writingTasks[number].sample);
+    setWritingQuestion(number);
+  };
 
   const saveDraft = async () => {
     setSaving(true);
     const response = await apiFetch("/api/topik-master/writing-draft", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ promptKey: "writing-54-environment", promptText, responseText: writing }),
+      body: JSON.stringify({ promptKey: task.key, promptText, responseText: writing }),
     });
     const payload = await response.json();
     setNotice(response.ok ? "Đã lưu bản nháp bài viết." : payload.error || "Chưa thể lưu bản nháp.");
@@ -565,7 +625,7 @@ function ExamScreen({ setNotice }: { setNotice: (message: string) => void }) {
     const response = await apiFetch("/api/topik-master/ai/writing-feedback", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ promptKey: "writing-54-environment", promptText, responseText: writing }),
+      body: JSON.stringify({ promptKey: task.key, promptText, responseText: writing }),
     });
     const payload = await response.json();
     if (response.ok && payload.feedback) {
@@ -577,20 +637,22 @@ function ExamScreen({ setNotice }: { setNotice: (message: string) => void }) {
 
   return (
     <section className={`${styles.workspace} ${styles.examWorkspace}`}>
-      <div className={styles.examHeading}><ScreenIntro eyebrow="THI THỬ" title="TOPIK II · Đề số 3" description="Viết · Câu 54" /><div><span>Thời gian còn lại</span><strong>01:23:45</strong><button disabled={saving} onClick={() => void saveDraft()}>{saving ? "Đang lưu" : "Lưu tạm"}</button></div></div>
+      <div className={styles.examHeading}><ScreenIntro eyebrow="WRITING LAB" title="TOPIK II Writing 51–54" description={task.title} /><div><span>Bản nháp tự giữ theo từng dạng</span><strong>{writing.length}/{task.max}</strong><button disabled={saving} onClick={() => void saveDraft()}>{saving ? "Đang lưu" : "Lưu tạm"}</button></div></div>
       <div className={styles.examLayout}>
         <aside className={styles.examSections}><strong>Cấu trúc đề</strong><button>▣ Nghe · 50 câu</button><button>▤ Đọc · 50 câu</button><button className={styles.examSectionActive}>✎ Viết · 4 câu</button><button>▧ Nói · 2 câu</button></aside>
         <article className={styles.writingPanel}>
+          <div className={styles.writingQuestionTabs}>{([51, 52, 53, 54] as const).map((number) => <button key={number} className={number === writingQuestion ? styles.filterActive : ""} onClick={() => changeWritingQuestion(number)}>Câu {number}</button>)}</div>
           <div className={styles.writingPrompt}><b>Đề bài</b><p>{promptText}</p></div>
-          <div className={styles.wordCount}>Số ký tự: <b>{writing.length} / 700</b></div>
+          {writingQuestion === 53 && <div className={styles.writingChart}><strong>Phương tiện đi làm (%)</strong>{[["지하철",42],["버스",28],["자가용",20],["자전거",6],["도보",4]].map(([label, value]) => <div key={String(label)}><span>{label}</span><i style={{ width: `${Number(value) * 2}%` }} /><b>{value}%</b></div>)}</div>}
+          <div className={styles.wordCount}>Số ký tự: <b>{writing.length} / {task.max}</b> · yêu cầu {task.min}–{task.max}</div>
           <div className={styles.editor}>
             <div className={styles.toolbar}><b>B</b><i>I</i><u>U</u><span>≡</span><span>☷</span><span>↶</span><span>↷</span></div>
-            <textarea aria-label="Bài viết TOPIK" value={writing} onChange={(event) => setWriting(event.target.value)} maxLength={5000} />
+            <textarea aria-label={`Bài viết TOPIK câu ${writingQuestion}`} value={writing} onChange={(event) => setWriting(event.target.value)} maxLength={task.max} />
           </div>
           <div className={styles.editorActions}><button onClick={() => void saveDraft()}>Lưu bản nháp</button><button disabled={analyzing} onClick={() => void requestFeedback()}>{analyzing ? "AI đang phân tích..." : "Nhận phản hồi AI →"}</button></div>
           {feedback && <section className={styles.writingFeedback}><div><strong>{feedback.score}/100</strong><p>{feedback.summary}</p></div><h3>Cần cải thiện</h3><ul>{feedback.improvements.map((item) => <li key={item}>{item}</li>)}</ul><h3>Cấu trúc</h3><p>{feedback.structureFeedback}</p>{feedback.grammarCorrections.length > 0 && <><h3>Sửa ngữ pháp</h3>{feedback.grammarCorrections.map((item) => <p key={`${item.original}-${item.corrected}`}><del>{item.original}</del> → <b>{item.corrected}</b><br /><small>{item.explanation}</small></p>)}</>}</section>}
         </article>
-        <aside className={styles.writingTips}><strong>Lưu ý</strong><ul><li>Viết 600–700 chữ.</li><li>Trình bày rõ mở bài và kết luận.</li><li>Dùng ngữ pháp phù hợp.</li></ul><div><span>Số chữ yêu cầu</span><b>600–700</b></div></aside>
+        <aside className={styles.writingTips}><strong>Lưu ý câu {writingQuestion}</strong><ul><li>{task.requirement}</li><li>Bám đúng dữ kiện đề bài.</li><li>Kiểm tra đuôi câu và chính tả.</li></ul><div><span>Số ký tự yêu cầu</span><b>{task.min}–{task.max}</b></div></aside>
       </div>
     </section>
   );
@@ -605,15 +667,16 @@ function PlanScreen({ setNotice }: { setNotice: (message: string) => void }) {
   ];
   const [tasks, setTasks] = useState<PlannerTask[]>(fallbackTasks);
   const [activeWeek, setActiveWeek] = useState(0);
+  const [plannerError, setPlannerError] = useState("");
   const completedCount = tasks.filter((task) => task.completed).length;
   const progress = tasks.length ? Math.round((completedCount / tasks.length) * 100) : 0;
 
   useEffect(() => {
     let active = true;
     void apiFetch("/api/topik-master/planner")
-      .then(async (response) => response.ok ? response.json() : null)
-      .then((payload) => { if (active && payload?.tasks?.length) setTasks(payload.tasks as PlannerTask[]); })
-      .catch(() => undefined);
+      .then(async (response) => ({ ok: response.ok, payload: await response.json() }))
+      .then(({ ok, payload }) => { if (!active) return; if (ok && payload?.tasks?.length) { setTasks(payload.tasks as PlannerTask[]); setPlannerError(""); } else setPlannerError(payload?.error || "Planner đang dùng kế hoạch dự phòng."); })
+      .catch(() => { if (active) setPlannerError("Không thể kết nối Planner; đang dùng kế hoạch dự phòng."); });
     return () => { active = false; };
   }, []);
 
@@ -636,6 +699,7 @@ function PlanScreen({ setNotice }: { setNotice: (message: string) => void }) {
   return (
     <section className={`${styles.workspace} ${styles.planWorkspace}`}>
       <ScreenIntro eyebrow="KẾ HOẠCH CÁ NHÂN" title="Kế hoạch chinh phục TOPIK 6" description="Nhiệm vụ hôm nay được tạo từ điểm yếu và lịch ôn SRS." />
+      {plannerError && <p className={styles.catalogError} role="alert">{plannerError}</p>}
       <div className={styles.planTabs}><button className={styles.planTabActive}>Kế hoạch học</button><button>Cộng đồng</button><button>Q&A</button><button>Tài liệu</button></div>
       <div className={styles.weekTabs}>{["Hôm nay", "Ngày mai", "Tuần này", "Tuần sau"].map((week, index) => <button key={week} className={index === activeWeek ? styles.activeWeek : ""} onClick={() => setActiveWeek(index)}><b>{week}</b><span>{index === 0 ? "Đang hoạt động" : "Sắp mở"}</span></button>)}</div>
       <article className={styles.planBoard}>
@@ -779,6 +843,26 @@ function StudyHub({ goTo, onStart }: { goTo: (screen: Screen) => void; onStart: 
   return <section className={styles.workspace}><ScreenIntro eyebrow="HỌC TẬP" title="Chọn kỹ năng cần luyện" description="Mỗi kỹ năng có lộ trình và tiến độ riêng." /><div className={styles.skillHub}>{skills.map((item) => <button key={item.title} className={`${styles.skillHubCard} ${styles[item.tone]}`} onClick={() => item.start ? void onStart() : item.screen && goTo(item.screen)}><i>{item.icon}</i><span><strong>{item.title}</strong><small>{item.description}</small><em>{item.count}</em></span><b>→</b></button>)}</div></section>;
 }
 
+function GlobalSearchScreen({ goTo }: { goTo: (screen: Screen) => void }) {
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [results, setResults] = useState<Record<string, Array<Record<string, unknown>>>>({});
+  useEffect(() => {
+    if (query.trim().length < 2) return;
+    let active = true; const timer = window.setTimeout(() => { setLoading(true); void apiFetch(`/api/topik-master/search?q=${encodeURIComponent(query.trim())}`).then(async (response) => response.ok ? response.json() : null).then((payload) => { if (active && payload?.results) setResults(payload.results); }).finally(() => { if (active) setLoading(false); }); }, 280);
+    return () => { active = false; window.clearTimeout(timer); };
+  }, [query]);
+  const groups: Array<[string, string, Screen, (item: Record<string, unknown>) => string, (item: Record<string, unknown>) => string]> = [
+    ["vocabulary", "Từ vựng", "Vocabulary", (item) => String(item.lemma), (item) => String(item.meaning_vi || "")],
+    ["grammar", "Ngữ pháp", "Grammar", (item) => String(item.pattern), (item) => String(item.meaning_vi || "")],
+    ["questions", "Câu TOPIK", "Ngân hàng câu hỏi", (item) => `Câu ${item.question_number || "—"} · ${item.skill}`, (item) => String(item.prompt || "")],
+    ["mistakes", "Câu sai của tôi", "Ôn tập", (item) => String(item.question_key), (item) => String(item.prompt || "")],
+    ["collections", "Bộ từ cá nhân", "Bộ từ cá nhân", (item) => String(item.title), (item) => String(item.description || "")],
+  ];
+  const total = Object.values(results).reduce((sum, items) => sum + items.length, 0);
+  return <section className={styles.workspace}><ScreenIntro eyebrow="GLOBAL SEARCH" title="Tìm mọi thứ trong TOPIK Master" description="Tìm bằng tiếng Hàn hoặc tiếng Việt trong từ vựng, ngữ pháp, câu TOPIK, câu sai và bộ từ cá nhân." /><label className={styles.globalSearch}><span>⌕</span><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Ví dụ: 결정하다 hoặc quyết định" /><button onClick={() => setQuery("")}>×</button></label>{loading && <div className={styles.catalogState}>Đang tìm trong toàn hệ thống…</div>}{!loading && query.length >= 2 && <p className={styles.questionBankSummary}>Tìm thấy {total} kết quả</p>}<div className={styles.searchGroups}>{groups.map(([key, label, destination, title, detail]) => (results[key]?.length ? <article key={key}><h2>{label}<small>{results[key].length}</small></h2>{results[key].map((item, index) => <button key={String(item.id || item.question_key || index)} onClick={() => goTo(destination)}><b>{title(item)}</b><span>{detail(item)}</span><em>→</em></button>)}</article> : null))}</div></section>;
+}
+
 function ReadingHub({ goTo, onOpenBank }: { goTo: (screen: Screen) => void; onOpenBank: () => void }) {
   const modes = [
     { icon: "핵", title: "Tìm ý chính", description: "Nhận diện chủ đề và câu trung tâm", count: "TOPIK I–II" },
@@ -799,6 +883,12 @@ function LearningCatalog({ kind, goTo, setNotice }: { kind: "vocabulary" | "gram
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
   const [srsStates, setSrsStates] = useState<Record<string, VocabularySrsState>>({});
+  const [grammarStates, setGrammarStates] = useState<Record<string, GrammarProgressState>>({});
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [comparison, setComparison] = useState<GrammarComparison | null>(null);
+  const [grammarDetail, setGrammarDetail] = useState<{ id: string; relatedQuestions: Array<{ external_key: string; question_number: number | null; prompt: string; question_type: string }>; history: Array<{ created_at: string; context?: { rating?: string } }> } | null>(null);
+  const [quizOpen, setQuizOpen] = useState(false);
+  const [quizAnswer, setQuizAnswer] = useState<string | null>(null);
   const [collections, setCollections] = useState<VocabularyCollection[]>([]);
   const [selectedCollectionId, setSelectedCollectionId] = useState("");
   const [savingWord, setSavingWord] = useState<string | null>(null);
@@ -845,7 +935,7 @@ function LearningCatalog({ kind, goTo, setNotice }: { kind: "vocabulary" | "gram
   useEffect(() => {
     if (!isVocabulary) return;
     const ids = items.map((item) => item.id).join(",");
-    if (!ids) { setSrsStates({}); return; }
+    if (!ids) return;
     let active = true;
     void apiFetch(`/api/topik-master/vocabulary-srs?ids=${encodeURIComponent(ids)}&limit=100`)
       .then(async (response) => response.ok ? response.json() : null)
@@ -853,6 +943,18 @@ function LearningCatalog({ kind, goTo, setNotice }: { kind: "vocabulary" | "gram
         if (!active || !payload?.states) return;
         setSrsStates(Object.fromEntries((payload.states as VocabularySrsState[]).map((state) => [state.vocabularyId, state])));
       })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [isVocabulary, items]);
+
+  useEffect(() => {
+    if (isVocabulary) return;
+    const ids = items.map((item) => item.id).join(",");
+    if (!ids) return;
+    let active = true;
+    void apiFetch(`/api/topik-master/grammar-progress?ids=${encodeURIComponent(ids)}`)
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((payload) => { if (active && payload?.states) setGrammarStates(Object.fromEntries((payload.states as GrammarProgressState[]).map((state) => [state.grammarId, state]))); })
       .catch(() => undefined);
     return () => { active = false; };
   }, [isVocabulary, items]);
@@ -899,6 +1001,42 @@ function LearningCatalog({ kind, goTo, setNotice }: { kind: "vocabulary" | "gram
     setNotice(response.ok ? "Đã thêm từ vào bộ cá nhân." : payload.error || "Không thêm được từ vào bộ.");
   };
 
+  const saveGrammar = async (grammarId: string, update: { rating?: "again" | "hard" | "good" | "easy"; bookmarked?: boolean; note?: string }) => {
+    setSavingWord(grammarId);
+    try {
+      const response = await apiFetch("/api/topik-master/grammar-progress", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ grammarId, ...update }) });
+      const payload = await response.json();
+      if (!response.ok || !payload.state) throw new Error(payload.error || "Không lưu được tiến độ ngữ pháp.");
+      setGrammarStates((current) => ({ ...current, [grammarId]: payload.state as GrammarProgressState }));
+      setNotice(update.rating ? `Đã xếp lịch ôn ngữ pháp: ${update.rating}.` : update.note !== undefined ? "Đã lưu ghi chú." : update.bookmarked ? "Đã bookmark ngữ pháp." : "Đã bỏ bookmark.");
+    } catch (reason) { setNotice(reason instanceof Error ? reason.message : "Không lưu được tiến độ ngữ pháp."); }
+    finally { setSavingWord(null); }
+  };
+
+  const openGrammarDetail = async (grammarId: string) => {
+    const response = await apiFetch(`/api/topik-master/grammar-progress?grammarId=${grammarId}`);
+    const payload = await response.json();
+    if (!response.ok) { setNotice(payload.error || "Không tải được lịch sử ngữ pháp."); return; }
+    setGrammarDetail({ id: grammarId, relatedQuestions: payload.relatedQuestions || [], history: payload.history || [] });
+  };
+
+  const toggleCompare = (grammarId: string) => {
+    setComparison(null);
+    setCompareIds((current) => current.includes(grammarId) ? current.filter((id) => id !== grammarId) : current.length < 4 ? [...current, grammarId] : current);
+  };
+
+  const compareGrammar = async () => {
+    if (compareIds.length < 2) { setNotice("Hãy chọn ít nhất 2 mẫu ngữ pháp để so sánh."); return; }
+    const response = await apiFetch("/api/topik-master/ai/grammar-compare", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ grammarIds: compareIds }) });
+    const payload = await response.json();
+    if (response.ok && payload.comparison) { setComparison(payload.comparison as GrammarComparison); setNotice(`Đã so sánh bằng ${payload.provider}.`); }
+    else setNotice(payload.error || "Chưa thể so sánh ngữ pháp.");
+  };
+
+  const grammarItems = items as GrammarCatalogItem[];
+  const quizTarget = !isVocabulary && grammarItems.length ? grammarItems[0] : null;
+  const quizChoices = quizTarget ? [quizTarget, ...grammarItems.slice(1, 4)].sort((left, right) => left.id.localeCompare(right.id)) : [];
+
   return <section className={styles.workspace}>
     <button className={styles.catalogBack} onClick={() => goTo("Học tập")}>← Học tập</button>
     <ScreenIntro eyebrow={isVocabulary ? "VOCABULARY" : "GRAMMAR"} title={isVocabulary ? "Kho từ vựng tiếng Hàn" : "Kho ngữ pháp TOPIK"} description={isVocabulary ? `${total.toLocaleString("vi-VN")} mục trong từ điển riêng của bạn.` : `${total.toLocaleString("vi-VN")} mẫu câu trong kho học riêng của bạn.`} />
@@ -907,6 +1045,9 @@ function LearningCatalog({ kind, goTo, setNotice }: { kind: "vocabulary" | "gram
       <div className={styles.filterRow}>{["Tất cả", "TOPIK I", "TOPIK II", "Chưa phân cấp"].map((item) => <button key={item} className={level === item ? styles.filterActive : ""} onClick={() => setLevel(item)}>{item}</button>)}</div>
     </div>
     {isVocabulary && <div className={styles.vocabularyActionsBar}><button onClick={() => goTo("Bộ từ cá nhân")}>▥ Bộ từ của tôi</button><label><span>Thêm nhanh vào</span><select value={selectedCollectionId} onChange={(event) => setSelectedCollectionId(event.target.value)}><option value="">Chưa có bộ từ</option>{collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.title}</option>)}</select></label></div>}
+    {!isVocabulary && <div className={styles.grammarToolbox}><button onClick={() => { setQuizOpen((value) => !value); setQuizAnswer(null); }}>◎ Quiz Grammar</button><span>Đã chọn {compareIds.length}/4 mẫu</span><button disabled={compareIds.length < 2} onClick={() => void compareGrammar()}>AI so sánh</button></div>}
+    {!isVocabulary && quizOpen && quizTarget && <article className={styles.grammarQuiz}><span>QUIZ NHANH</span><h2>{quizTarget.pattern} có nghĩa gần nhất là gì?</h2><div>{quizChoices.map((choice) => <button key={choice.id} className={quizAnswer === choice.id ? choice.id === quizTarget.id ? styles.quizCorrect : styles.quizWrong : ""} onClick={() => { setQuizAnswer(choice.id); void saveGrammar(quizTarget.id, { rating: choice.id === quizTarget.id ? "good" : "again" }); }}>{choice.meaning_vi || "Chưa có nghĩa"}</button>)}</div>{quizAnswer && <p>{quizAnswer === quizTarget.id ? "Chính xác!" : `Đáp án: ${quizTarget.meaning_vi}`}</p>}</article>}
+    {!isVocabulary && comparison && <article className={styles.grammarComparison}><button aria-label="Đóng so sánh" onClick={() => setComparison(null)}>×</button><h2>{comparison.title}</h2><p>{comparison.overview}</p><div>{comparison.items.map((item) => <section key={item.pattern}><h3>{item.pattern}</h3><b>{item.meaning}</b><p>{item.nuance}</p><small>{item.whenToUse}</small><blockquote>{item.exampleKo}<br />{item.exampleVi}</blockquote></section>)}</div><ul>{comparison.keyDifferences.map((difference) => <li key={difference}>{difference}</li>)}</ul><strong>💡 {comparison.memoryTip}</strong></article>}
     {error && <p className={styles.catalogError} role="alert">{error}</p>}
     {loading ? <div className={styles.catalogState}>Đang mở kho dữ liệu…</div> : items.length === 0 ? <div className={styles.catalogState}>Không tìm thấy mục phù hợp.</div> : <div className={styles.catalogList}>
       {items.map((rawItem) => isVocabulary ? (() => {
@@ -916,7 +1057,9 @@ function LearningCatalog({ kind, goTo, setNotice }: { kind: "vocabulary" | "gram
       })() : (() => {
         const item = rawItem as GrammarCatalogItem;
         const example = Array.isArray(item.examples) ? item.examples[0] : undefined;
-        return <article key={item.id}><div className={styles.catalogItemTop}><span className={styles.catalogGlyph}>文</span><div><h2>{item.pattern}</h2><p>{item.meaning_vi || "Chưa có nghĩa tiếng Việt"}</p></div><span className={item.topik_level === "TOPIK I" ? styles.levelOne : styles.levelTwo}>{item.topik_level || "Chưa phân cấp"}</span></div>{item.usage_vi ? <p className={styles.catalogExplanation}>{item.usage_vi}</p> : null}{example?.ko ? <div className={styles.catalogExample}><b>{example.ko}</b>{example.vi ? <span>{example.vi}</span> : null}</div> : null}<div className={styles.catalogMeta}><span>Độ khó {item.difficulty || 1}/5</span></div></article>;
+        const state = grammarStates[item.id];
+        const statusLabel = state?.status === "due" ? "Cần ôn" : state?.status === "mastered" ? "Đã thành thạo" : state?.status === "understood" ? "Đã hiểu" : state?.status === "hard" ? "Khó" : state ? "Đang học" : "Chưa học";
+        return <article key={item.id}><div className={styles.catalogItemTop}><span className={styles.catalogGlyph}>文</span><div><h2>{item.pattern}</h2><p>{item.meaning_vi || "Chưa có nghĩa tiếng Việt"}</p></div><span className={item.topik_level === "TOPIK I" ? styles.levelOne : styles.levelTwo}>{item.topik_level || "Chưa phân cấp"}</span></div>{item.usage_vi ? <p className={styles.catalogExplanation}>{item.usage_vi}</p> : null}{example?.ko ? <div className={styles.catalogExample}><b>{example.ko}</b>{example.vi ? <span>{example.vi}</span> : null}</div> : null}<div className={styles.catalogMeta}><span>Độ khó {item.difficulty || 1}/5</span><span>{statusLabel}</span><span>Mastery {Math.round(state?.mastery || 0)}%</span></div><div className={styles.wordStudyActions}><button disabled={savingWord === item.id} onClick={() => void saveGrammar(item.id, { bookmarked: !state?.bookmarked })}>{state?.bookmarked ? "★ Đã lưu" : "☆ Bookmark"}</button><button className={compareIds.includes(item.id) ? styles.filterActive : ""} onClick={() => toggleCompare(item.id)}>{compareIds.includes(item.id) ? "✓ Đang so sánh" : "⇄ So sánh"}</button><button onClick={() => { const note = window.prompt("Ghi chú cá nhân cho mẫu ngữ pháp này:", state?.note || ""); if (note !== null) void saveGrammar(item.id, { note }); }}>✎ Ghi chú</button><button onClick={() => void openGrammarDetail(item.id)}>↻ Lịch sử & đề TOPIK</button><div><button disabled={savingWord === item.id} onClick={() => void saveGrammar(item.id, { rating: "again" })}>Lại</button><button disabled={savingWord === item.id} onClick={() => void saveGrammar(item.id, { rating: "hard" })}>Khó</button><button disabled={savingWord === item.id} onClick={() => void saveGrammar(item.id, { rating: "good" })}>Tốt</button><button disabled={savingWord === item.id} onClick={() => void saveGrammar(item.id, { rating: "easy" })}>Dễ</button></div></div>{grammarDetail?.id === item.id && <div className={styles.grammarDetail}><strong>Lịch sử học: {grammarDetail.history.length} lượt</strong>{state?.note && <p>Ghi chú: {state.note}</p>}<b>Câu TOPIK chứa mẫu này</b>{grammarDetail.relatedQuestions.length ? grammarDetail.relatedQuestions.map((question) => <button key={question.external_key} onClick={() => goTo("Ngân hàng câu hỏi")}>Câu {question.question_number || "—"}: {question.prompt}</button>) : <small>Chưa có câu hỏi được gắn trực tiếp.</small>}</div>}</article>;
       })())}
     </div>}
     {!loading && items.length < total && <button className={styles.loadMoreButton} disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Đang tải…" : `Tải thêm · đang xem ${items.length.toLocaleString("vi-VN")}/${total.toLocaleString("vi-VN")}`}</button>}
@@ -944,10 +1087,10 @@ function PersonalCollectionsScreen({ goTo, setNotice }: { goTo: (screen: Screen)
     setSelectedId((current) => preferredId || (next.some((item) => item.id === current) ? current : next[0]?.id || ""));
   };
 
-  useEffect(() => { void reloadCollections(); }, []);
+  useEffect(() => { const timer = window.setTimeout(() => { void reloadCollections(); }, 0); return () => window.clearTimeout(timer); }, []);
 
   useEffect(() => {
-    if (!selectedId) { setItems([]); return; }
+    if (!selectedId) return;
     let active = true;
     void apiFetch(`/api/collections/${selectedId}`)
       .then(async (response) => response.ok ? response.json() : null)
@@ -1213,7 +1356,7 @@ function MistakesScreen({ goTo, fallbackMistakes, setNotice }: { goTo: (screen: 
     setNotice(response.ok ? `Đã xếp lịch ôn tiếp theo: ${new Intl.DateTimeFormat("vi-VN").format(new Date(payload.nextReviewAt))}.` : payload.error || "Chưa cập nhật được SRS.");
   };
 
-  return <section className={styles.workspace}><ScreenIntro eyebrow="오답노트" title="Sổ câu sai" description={`${visibleMistakes.length} câu cần ôn trong nhóm ${filter}.`} /><div className={styles.filterRow}>{["Tất cả", "Listening", "Reading", "Writing"].map((item) => <button key={item} className={filter === item ? styles.filterActive : ""} onClick={() => setFilter(item)}>{item}</button>)}</div><div className={styles.mistakeList}>{visibleMistakes.length ? visibleMistakes.map((mistake, index) => { const ai = explanations[mistake.question_key]; return <article key={`${mistake.question_key}-${index}`}><div><span>{mistake.skill}</span><b>Câu {index + 1}</b><small>{mistake.next_review_at ? `Ôn ${new Intl.DateTimeFormat("vi-VN").format(new Date(mistake.next_review_at))}` : "Ôn lại hôm nay"}</small></div><h2>{mistake.prompt}</h2><dl><div><dt>Đã chọn</dt><dd>{mistake.selected_answer}</dd></div><div><dt>Đáp án đúng</dt><dd>{mistake.correct_answer}</dd></div></dl><details><summary>Xem giải thích</summary><p>{mistake.explanation}</p>{ai && <div className={styles.aiExplanation}><strong>AI Coach · {ai.errorType}</strong><p>{ai.explanationVi}</p><p><b>Bẫy:</b> {ai.trap}</p><p><b>Mẹo:</b> {ai.topikTip}</p><div><b>Câu tương tự</b><p>{ai.similarQuestion.prompt}</p>{ai.similarQuestion.options.map((option, optionIndex) => <span key={option}>{optionIndex + 1}. {option}</span>)}</div></div>}<button disabled={loadingAi === mistake.question_key} onClick={() => void explain(mistake)}>{loadingAi === mistake.question_key ? "AI đang phân tích..." : "Giải thích sâu + câu tương tự"}</button></details><div className={styles.reviewRatings}><span>Đánh giá lượt ôn:</span><button onClick={() => void rate(mistake, "again")}>Lại</button><button onClick={() => void rate(mistake, "hard")}>Khó</button><button onClick={() => void rate(mistake, "good")}>Tốt</button><button onClick={() => void rate(mistake, "easy")}>Dễ</button></div></article>; }) : <article><h2>Chưa có câu sai trong bộ lọc này.</h2><p>Hoàn thành một bài luyện để Study Brain tạo lịch ôn.</p></article>}</div><button className={styles.retryButton} onClick={() => goTo("Làm bài")}>Làm lại {visibleMistakes.length} câu sai</button></section>;
+  return <section className={styles.workspace}><ScreenIntro eyebrow="오답노트" title="Sổ câu sai" description={`${visibleMistakes.length} câu cần ôn trong nhóm ${filter}.`} /><div className={styles.filterRow}>{["Tất cả", "Listening", "Reading", "Writing"].map((item) => <button key={item} className={filter === item ? styles.filterActive : ""} onClick={() => setFilter(item)}>{item}</button>)}</div><div className={styles.mistakeList}>{visibleMistakes.length ? visibleMistakes.map((mistake, index) => { const ai = explanations[mistake.question_key]; return <article key={`${mistake.question_key}-${index}`}><div><span>{mistake.skill}</span><b>Câu {index + 1}</b><small>{mistake.next_review_at ? `Ôn ${new Intl.DateTimeFormat("vi-VN").format(new Date(mistake.next_review_at))}` : "Ôn lại hôm nay"}</small></div><h2>{mistake.prompt}</h2><dl><div><dt>Đã chọn</dt><dd>{mistake.selected_answer}</dd></div><div><dt>Đáp án đúng</dt><dd>{mistake.correct_answer}</dd></div></dl><details><summary>Xem giải thích</summary><p>{mistake.explanation}</p>{ai && <div className={styles.aiExplanation}><strong>AI Coach · {ai.errorType}</strong><p>{ai.explanationVi}</p><p><b>Vì sao lựa chọn của bạn sai:</b> {ai.whyUserAnswerWrong}</p>{ai.optionReasons?.map((option) => <p key={option.index} className={option.correct ? styles.optionCorrect : styles.optionWrong}><b>{option.index + 1}. {option.option}</b><br />{option.reason}</p>)}<p><b>Bẫy:</b> {ai.trap}</p><p><b>Từ quan trọng:</b> {ai.importantVocabulary.join(" · ") || "Đang cập nhật"}</p><p><b>Ngữ pháp:</b> {ai.importantGrammar.join(" · ") || "Đang cập nhật"}</p><p><b>Mẹo:</b> {ai.topikTip}</p><div><b>Câu tương tự</b><p>{ai.similarQuestion.prompt}</p>{ai.similarQuestion.options.map((option, optionIndex) => <span key={option}>{optionIndex + 1}. {option}</span>)}</div><div className={styles.explanationActions}><button onClick={() => goTo("Vocabulary")}>＋ Thêm từ vào bộ từ</button><button onClick={() => setNotice("Câu này đã nằm trong 오답노트.")}>✓ Đã thêm vào 오답노트</button><button onClick={() => setNotice(`Đáp án câu tương tự: ${ai.similarQuestion.answerIndex + 1}. ${ai.similarQuestion.explanation}`)}>▶ Làm câu tương tự</button></div></div>}<button disabled={loadingAi === mistake.question_key} onClick={() => void explain(mistake)}>{loadingAi === mistake.question_key ? "AI đang phân tích..." : "Giải thích sâu + câu tương tự"}</button></details><div className={styles.reviewRatings}><span>Đánh giá lượt ôn:</span><button onClick={() => void rate(mistake, "again")}>Lại</button><button onClick={() => void rate(mistake, "hard")}>Khó</button><button onClick={() => void rate(mistake, "good")}>Tốt</button><button onClick={() => void rate(mistake, "easy")}>Dễ</button></div></article>; }) : <article><h2>Chưa có câu sai trong bộ lọc này.</h2><p>Hoàn thành một bài luyện để Study Brain tạo lịch ôn.</p></article>}</div><button className={styles.retryButton} onClick={() => goTo("Làm bài")}>Làm lại {visibleMistakes.length} câu sai</button></section>;
 }
 
 function CommunityScreen() {
@@ -1279,6 +1422,7 @@ export default function TopikMasterPage() {
       if (dashboardPayload?.dashboard) setDashboard(dashboardPayload.dashboard as DashboardData);
       if (practicePayload?.session?.questions?.length) {
         setPracticeSession(practicePayload.session as PracticeSession);
+        setActiveNav("Làm bài");
         setNotice("Đã khôi phục phiên làm bài đang dở.");
       }
     }).catch(() => undefined);
@@ -1389,17 +1533,18 @@ export default function TopikMasterPage() {
       <section className={styles.main}>
         <header className={styles.mobileHeader}>
           <Brand />
-          <div className={styles.headerActions}><button aria-label="Thông báo">♢</button><span className={styles.avatar}>L</span></div>
+          <div className={styles.headerActions}><button aria-label="Tìm kiếm" onClick={() => goTo("Tìm kiếm")}>⌕</button><button aria-label="Thông báo">♢</button><span className={styles.avatar}>L</span></div>
         </header>
 
         <div className={styles.desktopTopbar}>
           <div><strong>Xin chào, {profile.display_name} 👋</strong><span>Chúc bạn một ngày học thật hiệu quả!</span></div>
-          <div className={styles.headerActions}><button aria-label="Trợ giúp">?</button><button aria-label="Thông báo">♢</button><span className={styles.avatar}>L</span></div>
+          <div className={styles.headerActions}><button aria-label="Tìm kiếm toàn hệ thống" onClick={() => goTo("Tìm kiếm")}>⌕</button><button aria-label="Trợ giúp">?</button><button aria-label="Thông báo">♢</button><span className={styles.avatar}>L</span></div>
         </div>
 
         <div className={styles.content} id="topik-master-content" tabIndex={-1}>
           {activeNav === "Home" && <HomeScreen goTo={goTo} onStart={startPractice} />}
           {activeNav === "Dashboard" && <DashboardScreen goTo={goTo} notice={notice} setNotice={setNotice} dashboard={dashboard} profile={profile} />}
+          {activeNav === "Tìm kiếm" && <GlobalSearchScreen goTo={goTo} />}
           {activeNav === "Học tập" && <StudyHub goTo={goTo} onStart={startPractice} />}
           {activeNav === "Reading" && <ReadingHub goTo={goTo} onOpenBank={() => openQuestionBank("Reading")} />}
           {activeNav === "Vocabulary" && <LearningCatalog kind="vocabulary" goTo={goTo} setNotice={setNotice} />}

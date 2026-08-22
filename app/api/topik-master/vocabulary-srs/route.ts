@@ -119,5 +119,8 @@ export async function POST(request: Request) {
   };
   const result = await context.supabase.from("topik_master_vocabulary_srs").upsert(payload).select("vocabulary_id,status,bookmarked,first_seen_at,last_reviewed_at,next_review_at,review_count,correct_count,wrong_count,ease_factor,interval_days,mastery_score,last_rating").single();
   if (result.error || !result.data) return NextResponse.json({ ok: false, error: "Không thể lưu lượt ôn từ." }, { status: 500 });
+  if (rating) await context.supabase.rpc("record_topik_master_answer", { p_question_key: `vocabulary:${vocabularyId}`, p_skill: "vocabulary", p_subskill: "vocabulary-srs",
+    p_correct: rating === "good" || rating === "easy", p_selected_answer: { rating }, p_response_time_ms: 0, p_confidence: null,
+    p_error_type: rating === "again" ? "forgotten" : null, p_context: { activityType: "vocabulary_review", contentId: vocabularyId, rating, mastery: scheduled?.masteryScore } });
   return NextResponse.json({ ok: true, state: serialize(result.data as SrsRow) });
 }

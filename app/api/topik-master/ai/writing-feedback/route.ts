@@ -33,7 +33,8 @@ export async function POST(request: Request) {
   const promptKey = typeof body.promptKey === "string" ? body.promptKey.trim() : "writing-54-environment";
   const promptText = typeof body.promptText === "string" ? body.promptText.normalize("NFC").trim() : "";
   const responseText = typeof body.responseText === "string" ? body.responseText.normalize("NFC").trim() : "";
-  if (!promptText || responseText.length < 30) return NextResponse.json({ ok: false, error: "Bài viết cần ít nhất 30 ký tự để phân tích." }, { status: 400 });
+  const minimumLength = /writing-5[12]/.test(promptKey) ? 2 : 30;
+  if (!promptText || responseText.length < minimumLength) return NextResponse.json({ ok: false, error: `Bài viết cần ít nhất ${minimumLength} ký tự để phân tích.` }, { status: 400 });
   if (responseText.length > 5000) return NextResponse.json({ ok: false, error: "Bài viết tối đa 5.000 ký tự." }, { status: 400 });
 
   const metrics = deterministicWritingMetrics(responseText);
@@ -60,6 +61,8 @@ export async function POST(request: Request) {
     character_count: metrics.characterCount,
     deterministic_metrics: metrics,
   }).select("id").maybeSingle();
+  await context.supabase.from("topik_master_learning_events").insert({ user_id: context.user.id, question_key: promptKey, skill: "writing", subskill: promptKey.match(/writing-(5[1-4])/)?.[1] || "general",
+    correct: responseText.length >= minimumLength, response_time_ms: 0, context: { activityType: "writing_submission", contentId: submission.data?.id || promptKey, characterCount: responseText.length } });
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     if (submission.data) await context.supabase.from("topik_master_writing_feedback").insert({ submission_id: submission.data.id, user_id: context.user.id, provider: "deterministic", prompt_version: TOPIK_AI_PROMPT_VERSION, feedback: fallback });

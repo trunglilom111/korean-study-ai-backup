@@ -106,7 +106,27 @@ export type AiQuestionExplanation = {
   importantGrammar: string[];
   trap: string;
   topikTip: string;
+  optionReasons: Array<{ index: number; option: string; correct: boolean; reason: string }>;
   similarQuestion: { prompt: string; options: string[]; answerIndex: number; explanation: string };
+};
+
+export type GrammarProgressState = {
+  grammarId: string;
+  status: "unseen" | "learning" | "understood" | "mastered" | "due" | "hard";
+  storedStatus: "learning" | "understood" | "mastered" | "hard";
+  bookmarked: boolean;
+  note: string;
+  nextReview: string | null;
+  reviewCount: number;
+  mastery: number;
+};
+
+export type GrammarComparison = {
+  title: string;
+  overview: string;
+  items: Array<{ pattern: string; meaning: string; nuance: string; whenToUse: string; exampleKo: string; exampleVi: string }>;
+  keyDifferences: string[];
+  memoryTip: string;
 };
 
 export type WritingFeedback = {

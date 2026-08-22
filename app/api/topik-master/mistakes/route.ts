@@ -34,7 +34,7 @@ export async function PATCH(request: Request) {
 
   const existing = await context.supabase
     .from("topik_mistakes")
-    .select("id,question_key,interval_days,review_count,correct_count,wrong_count")
+    .select("id,question_key,skill,subskill,interval_days,review_count,correct_count,wrong_count")
     .eq("id", id)
     .eq("user_id", context.user.id)
     .maybeSingle();
@@ -66,6 +66,9 @@ export async function PATCH(request: Request) {
       ease_factor: scheduled.easeFactor,
       updated_at: new Date().toISOString(),
     }).eq("user_id", context.user.id).eq("entity_type", "question").eq("entity_key", existing.data.question_key);
+    await context.supabase.rpc("record_topik_master_answer", { p_question_key: existing.data.question_key, p_skill: existing.data.skill, p_subskill: existing.data.subskill,
+      p_correct: correct, p_selected_answer: { rating }, p_response_time_ms: 0, p_confidence: null, p_error_type: correct ? null : "review-lapse",
+      p_context: { activityType: "mistake_review", contentId: id, rating } });
   }
   return NextResponse.json({ ok: true, nextReviewAt: dueAt, schedule: scheduled });
 }

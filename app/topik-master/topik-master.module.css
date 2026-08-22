@@ -505,6 +505,29 @@
   .resultSummary span, .resultSummary strong, .resultSummary button, .tableHead, .tableRow { font-size: 10px; }
 }
 
+.grammarToolbox { display: flex; align-items: center; gap: 10px; margin: 12px 0 18px; padding: 12px; border: 1px solid #ddd8fb; border-radius: 16px; background: #f8f6ff; }
+.grammarToolbox button { border: 0; border-radius: 10px; padding: 10px 14px; background: #6948d9; color: #fff; font-weight: 700; }
+.grammarToolbox button:disabled { opacity: .45; }.grammarToolbox span { margin-left: auto; color: #665f7a; font-size: 13px; }
+.grammarQuiz, .grammarComparison { position: relative; margin: 0 0 18px; padding: 18px; border: 1px solid #ddd8fb; border-radius: 18px; background: #fff; box-shadow: 0 8px 28px rgba(74,47,144,.08); }
+.grammarQuiz > span { color: #7452dd; font-size: 12px; font-weight: 800; }.grammarQuiz > div { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 10px; }
+.grammarQuiz button { padding: 12px; border: 1px solid #e5e1ee; border-radius: 12px; background: #fff; text-align: left; }.quizCorrect { border-color: #22aa89 !important; background: #eafaf5 !important; }.quizWrong { border-color: #ed6a78 !important; background: #fff0f2 !important; }
+.grammarComparison > button { position: absolute; right: 14px; top: 12px; border: 0; background: transparent; font-size: 24px; }.grammarComparison > div { display: grid; grid-template-columns: repeat(auto-fit,minmax(190px,1fr)); gap: 12px; }
+.grammarComparison section { padding: 14px; border-radius: 14px; background: #f8f7fc; }.grammarComparison h3 { color: #5d3ec7; }.grammarComparison blockquote { margin: 10px 0 0; padding: 10px; border-left: 3px solid #7d5be5; background: #fff; font-style: normal; }
+.grammarDetail { display: grid; gap: 8px; margin-top: 12px; padding: 12px; border-radius: 12px; background: #f8fafc; }.grammarDetail button { border: 0; color: #4c3aa0; background: transparent; text-align: left; }
+.flaggedQuestion { color: #b86a00 !important; border-color: #f0a53c !important; background: #fff8e8 !important; }
+.readingPassage { padding: 16px; border: 1px solid #dbe5f8; border-radius: 14px; background: #f8fbff; }.readingPassage > strong { display: block; margin-bottom: 8px; color: #4666a8; font-size: 12px; }.readingPassage p { margin: 0; line-height: 2; }
+.readingPassage button { display: inline; padding: 3px 5px; border: 0; border-radius: 6px; background: transparent; color: #182238; font: inherit; line-height: 1.9; text-align: left; }.readingPassage button:hover { background: #e8efff; }
+.readingAnalysis { position: relative; display: grid; gap: 10px; margin: 12px 0; padding: 16px; border: 1px solid #bfe3d9; border-radius: 16px; background: #f2fcf8; }.readingAnalysis > button { position: absolute; right: 10px; top: 8px; border: 0; background: transparent; font-size: 22px; }.readingAnalysis h3,.readingAnalysis p { margin: 0; }.readingAnalysis div { display: flex; flex-wrap: wrap; gap: 6px; }.readingAnalysis div strong { width: 100%; }.readingAnalysis span { padding: 5px 8px; border-radius: 8px; background: #fff; font-size: 12px; }
+
+.globalSearch { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; padding: 8px 14px; border: 2px solid #d9d3f4; border-radius: 16px; background: #fff; }.globalSearch:focus-within { border-color: #7456da; box-shadow: 0 0 0 4px rgba(116,86,218,.1); }.globalSearch input { width: 100%; min-height: 42px; border: 0; outline: 0; font-size: 16px; }.globalSearch button { border: 0; background: transparent; font-size: 20px; }
+.searchGroups { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 14px; margin-top: 16px; }.searchGroups article { padding: 16px; border: 1px solid #e7e3ef; border-radius: 16px; background: #fff; }.searchGroups h2 { display: flex; justify-content: space-between; margin: 0 0 10px; font-size: 15px; }.searchGroups h2 small { padding: 3px 8px; border-radius: 20px; background: #eee9ff; color: #6044ba; }.searchGroups article > button { display: grid; grid-template-columns: 1fr auto; width: 100%; padding: 10px 0; border: 0; border-bottom: 1px solid #f0edf4; background: transparent; text-align: left; }.searchGroups button b,.searchGroups button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.searchGroups button span { color: #6c6677; font-size: 12px; }.searchGroups button em { grid-column: 2; grid-row: 1/3; align-self: center; color: #7657d9; }
+
+.writingQuestionTabs { display: grid; grid-template-columns: repeat(4,1fr); gap: 8px; margin-bottom: 14px; }.writingQuestionTabs button { min-height: 40px; border: 1px solid #e4dfed; border-radius: 10px; background: #fff; font-weight: 700; }.writingChart { display: grid; gap: 8px; margin: 12px 0; padding: 14px; border-radius: 14px; background: #f8fafc; }.writingChart > div { display: grid; grid-template-columns: 58px 1fr 42px; align-items: center; gap: 8px; font-size: 12px; }.writingChart i { display: block; height: 12px; border-radius: 8px; background: linear-gradient(90deg,#63c8b2,#7260dd); }
+
+.optionCorrect,.optionWrong { padding: 9px; border-radius: 9px; }.optionCorrect { background: #eaf9f4; color: #176c59; }.optionWrong { background: #fff3f4; color: #8d3c46; }.explanationActions { display: flex; flex-wrap: wrap; gap: 8px; }.explanationActions button { padding: 8px 10px; border: 1px solid #ddd5f4; border-radius: 9px; background: #fff; color: #5639ad; }
+
+@media (max-width: 720px) { .grammarToolbox { flex-wrap: wrap; }.grammarToolbox span { order: 3; width: 100%; margin: 0; }.grammarQuiz > div,.searchGroups { grid-template-columns: 1fr; } }
+
 @media (prefers-reduced-motion: reduce) {
   .workspace { animation: none; }
   .lessonCard, .skipLink { transition: none; }
