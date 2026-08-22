@@ -99,8 +99,8 @@ export default function TopikMasterImportPage() {
     <main className="import-page">
       <section className="import-card">
         <p className="eyebrow">TOPIK MASTER · OWNER IMPORT</p>
-        <h1>Nhập Korean Basic Dictionary</h1>
-        <p className="lead">Chọn toàn bộ batch đã tạo trong <code>.topik-import/krdict-20260819</code>. Hệ thống xử lý tuần tự, giữ dữ liệu ở trạng thái draft và dừng ngay khi gặp lỗi.</p>
+        <h1>Nhập dữ liệu TOPIK Master</h1>
+        <p className="lead">Chọn batch JSON từ điển, ngữ pháp hoặc ngân hàng câu hỏi. Hệ thống kiểm tra nguồn và quyền sử dụng, xử lý tuần tự, giữ câu hỏi ở trạng thái draft và dừng ngay khi gặp lỗi.</p>
         <label className="file-picker">
           <span>Chọn batch JSON</span>
           <input type="file" accept="application/json,.json" multiple onChange={(event) => chooseFiles(event.target.files)} disabled={running} />

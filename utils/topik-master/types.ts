@@ -4,10 +4,17 @@ export type PracticeQuestion = {
   position: number;
   skill: "listening" | "reading" | "writing" | "vocabulary" | "grammar";
   subskill: string;
+  questionNumber: number | null;
   questionType: string;
   prompt: string;
   passage: string | null;
   audioUrl: string | null;
+  transcript: string | null;
+  translationVi: string | null;
+  audioDurationSeconds: number | null;
+  audioSpeakers: Array<{ name: string; gender: "female" | "male"; voice?: string }>;
+  vocabulary: Array<{ id: string; lemma: string; meaningVi: string | null }>;
+  tags: string[];
   options: string[];
   difficulty: number;
   points: number;
@@ -69,6 +76,7 @@ export type DashboardData = {
   overallProgress: number;
   streak: number;
   dueReviews: number;
+  dueVocabulary: number;
   examDate: string | null;
   daysUntilExam: number | null;
   skills: Array<{ skill: string; mastery: number; weakness: number; attempts: number }>;

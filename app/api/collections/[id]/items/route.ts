@@ -153,7 +153,7 @@ export async function POST(
     );
   }
 
-  const { data: word, error: wordError } = await supabase
+  const { data: legacyWord, error: wordError } = await supabase
     .from("vocabulary")
     .select(
       "id,target_code,korean,meaning,pronunciation,part_of_speech,level,categories,examples"
@@ -166,12 +166,50 @@ export async function POST(
     return databaseErrorResponse(wordError);
   }
 
-  if (!word) {
+  const topikWordResult = !legacyWord
+    ? await supabase
+        .from("topik_master_vocabulary")
+        .select("id,lemma,part_of_speech,hanja,meaning_vi,explanation_ko,nikl_level,topik_level,metadata")
+        .eq("id", vocabularyId)
+        .maybeSingle()
+    : { data: null, error: null };
+
+  if (topikWordResult.error) {
+    return databaseErrorResponse(topikWordResult.error);
+  }
+
+  if (!legacyWord && !topikWordResult.data) {
     return NextResponse.json(
-      { error: "Không tìm thấy từ vựng thuộc tài khoản của bạn." },
+      { error: "Không tìm thấy từ vựng trong kho học của bạn." },
       { status: 404 }
     );
   }
+
+  const word = legacyWord
+    ? {
+        targetCode: legacyWord.target_code || "",
+        korean: legacyWord.korean || "",
+        meaning: legacyWord.meaning || "",
+        pronunciation: legacyWord.pronunciation || "",
+        partOfSpeech: legacyWord.part_of_speech || "",
+        level: legacyWord.level || "",
+        categories: Array.isArray(legacyWord.categories) ? legacyWord.categories : [],
+        examples: Array.isArray(legacyWord.examples) ? legacyWord.examples : [],
+        source: "legacy",
+      }
+    : {
+        targetCode: String(topikWordResult.data?.metadata?.targetCode || ""),
+        korean: topikWordResult.data?.lemma || "",
+        meaning: topikWordResult.data?.meaning_vi || "",
+        pronunciation: "",
+        partOfSpeech: topikWordResult.data?.part_of_speech || "",
+        level: topikWordResult.data?.topik_level || topikWordResult.data?.nikl_level || "",
+        categories: ["TOPIK Master"],
+        examples: [],
+        hanja: topikWordResult.data?.hanja || "",
+        explanationKo: topikWordResult.data?.explanation_ko || "",
+        source: "topik-master",
+      };
 
   const { data: lastItem, error: lastItemError } = await supabase
     .from("vocabulary_collection_items")
@@ -196,18 +234,7 @@ export async function POST(
           : 0,
       personal_note: personalNote,
       vocabulary_snapshot: {
-        targetCode: word.target_code || "",
-        korean: word.korean || "",
-        meaning: word.meaning || "",
-        pronunciation: word.pronunciation || "",
-        partOfSpeech: word.part_of_speech || "",
-        level: word.level || "",
-        categories: Array.isArray(word.categories)
-          ? word.categories
-          : [],
-        examples: Array.isArray(word.examples)
-          ? word.examples
-          : [],
+        ...word,
       },
     })
     .select(

@@ -1,0 +1,215 @@
+[
+  {
+    "key": "tm-original-listening-001",
+    "url": "/topik-master/audio/tm-original-listening-001.wav",
+    "durationSeconds": 14,
+    "speakers": [
+      {
+        "name": "여자",
+        "gender": "female",
+        "voice": "Kore"
+      },
+      {
+        "name": "남자",
+        "gender": "male",
+        "voice": "Charon"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-listening-002",
+    "url": "/topik-master/audio/tm-original-listening-002.wav",
+    "durationSeconds": 8.3,
+    "speakers": [
+      {
+        "name": "여자",
+        "gender": "female",
+        "voice": "Aoede"
+      },
+      {
+        "name": "남자",
+        "gender": "male",
+        "voice": "Iapetus"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-listening-003",
+    "url": "/topik-master/audio/tm-original-listening-003.wav",
+    "durationSeconds": 7.8,
+    "speakers": [
+      {
+        "name": "여자",
+        "gender": "female",
+        "voice": "Kore"
+      },
+      {
+        "name": "남자",
+        "gender": "male",
+        "voice": "Charon"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-listening-004",
+    "url": "/topik-master/audio/tm-original-listening-004.wav",
+    "durationSeconds": 10.2,
+    "speakers": [
+      {
+        "name": "남자",
+        "gender": "male",
+        "voice": "Iapetus"
+      },
+      {
+        "name": "여자",
+        "gender": "female",
+        "voice": "Kore"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-listening-005",
+    "url": "/topik-master/audio/tm-original-listening-005.wav",
+    "durationSeconds": 7.2,
+    "speakers": [
+      {
+        "name": "남자",
+        "gender": "male",
+        "voice": "Charon"
+      },
+      {
+        "name": "여자",
+        "gender": "female",
+        "voice": "Aoede"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-listening-006",
+    "url": "/topik-master/audio/tm-original-listening-006.wav",
+    "durationSeconds": 10.4,
+    "speakers": [
+      {
+        "name": "안내자",
+        "gender": "female",
+        "voice": "Kore"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-listening-007",
+    "url": "/topik-master/audio/tm-original-listening-007.wav",
+    "durationSeconds": 8.4,
+    "speakers": [
+      {
+        "name": "여자",
+        "gender": "female",
+        "voice": "Aoede"
+      },
+      {
+        "name": "남자",
+        "gender": "male",
+        "voice": "Iapetus"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-listening-008",
+    "url": "/topik-master/audio/tm-original-listening-008.wav",
+    "durationSeconds": 8.5,
+    "speakers": [
+      {
+        "name": "남자",
+        "gender": "male",
+        "voice": "Charon"
+      },
+      {
+        "name": "여자",
+        "gender": "female",
+        "voice": "Kore"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-topik-i-listening-001",
+    "url": "/topik-master/audio/tm-original-topik-i-listening-001.wav",
+    "durationSeconds": 5.6,
+    "speakers": [
+      {
+        "name": "여자",
+        "gender": "female",
+        "voice": "Aoede"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-topik-i-listening-002",
+    "url": "/topik-master/audio/tm-original-topik-i-listening-002.wav",
+    "durationSeconds": 7.4,
+    "speakers": [
+      {
+        "name": "남자",
+        "gender": "male",
+        "voice": "Iapetus"
+      },
+      {
+        "name": "여자",
+        "gender": "female",
+        "voice": "Kore"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-topik-i-listening-003",
+    "url": "/topik-master/audio/tm-original-topik-i-listening-003.wav",
+    "durationSeconds": 9.2,
+    "speakers": [
+      {
+        "name": "여자",
+        "gender": "female",
+        "voice": "Aoede"
+      },
+      {
+        "name": "남자",
+        "gender": "male",
+        "voice": "Charon"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  },
+  {
+    "key": "tm-original-topik-i-listening-004",
+    "url": "/topik-master/audio/tm-original-topik-i-listening-004.wav",
+    "durationSeconds": 11.6,
+    "speakers": [
+      {
+        "name": "안내자",
+        "gender": "female",
+        "voice": "Kore"
+      }
+    ],
+    "synthetic": true,
+    "provider": "Gemini 3.1 Flash TTS"
+  }
+]

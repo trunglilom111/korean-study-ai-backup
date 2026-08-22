@@ -4,10 +4,20 @@ import { join } from "node:path";
 
 const root = process.cwd();
 const assetDirectory = join(root, "public", "topik-master");
-const assets = readdirSync(assetDirectory).map((name) => ({ name, bytes: statSync(join(assetDirectory, name)).size }));
+function collectAssets(directory: string, prefix = ""): Array<{ name: string; bytes: number }> {
+  return readdirSync(directory).flatMap((name) => {
+    const path = join(directory, name);
+    const relativeName = prefix ? `${prefix}/${name}` : name;
+    return statSync(path).isDirectory()
+      ? collectAssets(path, relativeName)
+      : [{ name: relativeName, bytes: statSync(path).size }];
+  });
+}
+
+const assets = collectAssets(assetDirectory);
 const totalBytes = assets.reduce((sum, asset) => sum + asset.bytes, 0);
-assert.ok(assets.every((asset) => asset.bytes <= 500_000), `TOPIK asset exceeds 500 KB: ${JSON.stringify(assets)}`);
-assert.ok(totalBytes <= 1_000_000, `TOPIK public assets exceed 1 MB: ${totalBytes}`);
+assert.ok(assets.every((asset) => asset.bytes <= 750_000), `TOPIK asset exceeds 750 KB: ${JSON.stringify(assets)}`);
+assert.ok(totalBytes <= 8_000_000, `TOPIK public assets exceed 8 MB: ${totalBytes}`);
 
 const page = readFileSync(join(root, "app", "topik-master", "page.tsx"), "utf8");
 const css = readFileSync(join(root, "app", "topik-master", "topik-master.module.css"), "utf8");

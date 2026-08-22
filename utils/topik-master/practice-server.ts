@@ -26,12 +26,18 @@ type QuestionRow = {
   external_key: string;
   skill: PracticeQuestion["skill"];
   subskill: string;
+  question_number?: number | null;
   question_type: string;
   prompt: string;
   passage: string | null;
   audio_url: string | null;
+  transcript?: string | null;
+  translation_vi?: string | null;
+  audio_duration_seconds?: number | null;
+  audio_speakers?: unknown;
   options: unknown;
   difficulty: number;
+  tags?: unknown;
 };
 type AnswerRow = {
   question_id: string;
@@ -42,6 +48,18 @@ type AnswerRow = {
 
 function stringArray(value: unknown) {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+function audioSpeakers(value: unknown): PracticeQuestion["audioSpeakers"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    if (!item || typeof item !== "object") return [];
+    const speaker = item as Record<string, unknown>;
+    const name = typeof speaker.name === "string" ? speaker.name : "";
+    const gender = speaker.gender === "male" ? "male" : speaker.gender === "female" ? "female" : null;
+    if (!name || !gender) return [];
+    return [{ name, gender, voice: typeof speaker.voice === "string" ? speaker.voice : undefined }];
+  });
 }
 
 export async function loadPracticeSession(
@@ -83,14 +101,37 @@ export async function loadPracticeSession(
 
   const mappings = (mappingsResult.data || []) as MappingRow[];
   const questionIds = mappings.map((mapping) => mapping.question_id);
-  const questionsResult = questionIds.length
+  let questionsResult: { data: unknown[] | null; error: unknown } = questionIds.length
     ? await supabase
       .from("topik_master_questions")
-      .select("id,external_key,skill,subskill,question_type,prompt,passage,audio_url,options,difficulty")
+      .select("id,external_key,skill,subskill,question_number,question_type,prompt,passage,audio_url,transcript,translation_vi,audio_duration_seconds,audio_speakers,options,difficulty,tags")
       .in("id", questionIds)
     : { data: [], error: null };
 
+  if (questionsResult.error && questionIds.length) {
+    questionsResult = await supabase
+      .from("topik_master_questions")
+      .select("id,external_key,skill,subskill,question_type,prompt,passage,audio_url,options,difficulty")
+      .in("id", questionIds);
+  }
+
   if (questionsResult.error) return { session: null, error: questionsResult.error };
+
+  const vocabularyResult = questionIds.length
+    ? await supabase
+        .from("topik_master_question_vocabulary")
+        .select("question_id,topik_master_vocabulary(id,lemma,meaning_vi)")
+        .in("question_id", questionIds)
+    : { data: [], error: null };
+  const vocabularyByQuestion = new Map<string, PracticeQuestion["vocabulary"]>();
+  if (!vocabularyResult.error) {
+    for (const link of vocabularyResult.data || []) {
+      const raw = link.topik_master_vocabulary as unknown;
+      const term = (Array.isArray(raw) ? raw[0] : raw) as { id?: string; lemma?: string; meaning_vi?: string | null } | null;
+      if (!term?.id || !term.lemma) continue;
+      vocabularyByQuestion.set(link.question_id, [...(vocabularyByQuestion.get(link.question_id) || []), { id: term.id, lemma: term.lemma, meaningVi: term.meaning_vi || null }]);
+    }
+  }
 
   const questionById = new Map(((questionsResult.data || []) as QuestionRow[]).map((question) => [question.id, question]));
   const questions = mappings.flatMap((mapping) => {
@@ -102,12 +143,19 @@ export async function loadPracticeSession(
       position: mapping.position,
       skill: question.skill,
       subskill: question.subskill,
+      questionNumber: question.question_number ?? mapping.position,
       questionType: question.question_type,
       prompt: question.prompt,
       passage: question.passage,
       audioUrl: question.audio_url,
+      transcript: question.transcript ?? null,
+      translationVi: question.translation_vi ?? null,
+      audioDurationSeconds: question.audio_duration_seconds == null ? null : Number(question.audio_duration_seconds),
+      audioSpeakers: audioSpeakers(question.audio_speakers),
+      vocabulary: vocabularyByQuestion.get(question.id) || [],
       options: stringArray(question.options),
       difficulty: question.difficulty,
+      tags: stringArray(question.tags ?? []),
       points: Number(mapping.points),
     } satisfies PracticeQuestion];
   });

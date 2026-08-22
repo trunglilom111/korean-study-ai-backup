@@ -8,11 +8,12 @@ export async function GET(request: Request) {
   const context = await getTopikMasterContext(request);
   if (!context.ok) return context.response;
   const nowIso = new Date().toISOString();
-  const [profile, stats, attempts, due] = await Promise.all([
+  const [profile, stats, attempts, due, dueVocabulary] = await Promise.all([
     context.supabase.from("topik_master_profiles").select("exam_date,current_streak").eq("user_id", context.user.id).maybeSingle(),
     context.supabase.from("topik_master_skill_stats").select("skill,attempts,mastery_score,weakness_score").eq("user_id", context.user.id),
     context.supabase.from("topik_attempts").select("id,exam_title,score_percent,created_at").eq("user_id", context.user.id).order("created_at", { ascending: false }).limit(5),
     context.supabase.from("topik_master_review_queue").select("id", { count: "exact", head: true }).eq("user_id", context.user.id).lte("due_at", nowIso),
+    context.supabase.from("topik_master_vocabulary_srs").select("vocabulary_id", { count: "exact", head: true }).eq("user_id", context.user.id).lte("next_review_at", nowIso),
   ]);
 
   if (profile.error || stats.error || attempts.error || due.error) {
@@ -43,6 +44,7 @@ export async function GET(request: Request) {
     ? Math.round(skills.reduce((sum, skill) => sum + skill.mastery, 0) / skills.length)
     : 0;
   const dueCount = due.count || 0;
+  const dueVocabularyCount = dueVocabulary.error ? 0 : dueVocabulary.count || 0;
   const weakRecommendations = skills.slice(0, 2).map((skill) => ({
     skill: skill.skill,
     title: `Củng cố ${skill.skill}`,
@@ -50,6 +52,7 @@ export async function GET(request: Request) {
     count: Math.max(5, Math.min(20, Math.ceil(skill.weakness / 5))),
   }));
   const recommendations = [
+    ...(dueVocabularyCount ? [{ skill: "vocabulary", title: "Ôn từ đến hạn", reason: `${dueVocabularyCount} từ đang chờ trong SRS`, count: dueVocabularyCount }] : []),
     ...(dueCount ? [{ skill: "review", title: "Ôn câu đến hạn", reason: `${dueCount} mục đang chờ trong SRS`, count: dueCount }] : []),
     ...weakRecommendations,
   ].slice(0, 4);
@@ -58,6 +61,7 @@ export async function GET(request: Request) {
     overallProgress,
     streak: profile.data?.current_streak || 0,
     dueReviews: dueCount,
+    dueVocabulary: dueVocabularyCount,
     examDate,
     daysUntilExam,
     skills,

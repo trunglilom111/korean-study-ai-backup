@@ -40,6 +40,11 @@ yarn-error.log*
 
 # Local TOPIK import artifacts (large licensed datasets and generated batches)
 /.topik-import/
+/.codex-runtime/
+
+# Accidental terminal-output files (not source code)
+/h origin main
+/ter learning platform*
 
 # typescript
 *.tsbuildinfo

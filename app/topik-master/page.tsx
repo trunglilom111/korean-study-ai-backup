@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/utils/api-client";
+import { preloadSpeechVoices, speakKorean } from "@/utils/speech";
 import type {
   AiQuestionExplanation,
   DashboardData,
@@ -21,7 +22,7 @@ const recommendations = [
   { icon: "✍️", title: "Viết câu 54", subtitle: "Chủ đề môi trường", tone: "violet", screen: "Viết bài" },
 ] as const;
 
-type Screen = "Home" | "Dashboard" | "Học tập" | "Reading" | "Vocabulary" | "Grammar" | "TOPIK Practice" | "Làm bài" | "Viết bài" | "Kết quả" | "Ôn tập" | "Kế hoạch" | "Cộng đồng" | "Cá nhân";
+type Screen = "Home" | "Dashboard" | "Học tập" | "Reading" | "Vocabulary" | "Bộ từ cá nhân" | "Grammar" | "TOPIK Practice" | "Ngân hàng câu hỏi" | "Làm bài" | "Viết bài" | "Kết quả" | "Ôn tập" | "Kế hoạch" | "Cộng đồng" | "Cá nhân";
 type TopikMasterProfile = {
   display_name: string;
   current_level: string;
@@ -63,6 +64,72 @@ type GrammarCatalogItem = {
   topik_level: "TOPIK I" | "TOPIK II" | null;
   difficulty: number;
   examples: GrammarExample[] | null;
+};
+
+type VocabularySrsState = {
+  vocabularyId: string;
+  status: "unseen" | "learning" | "mastered" | "due" | "hard";
+  bookmarked: boolean;
+  nextReview: string | null;
+  reviewCount: number;
+  mastery: number;
+};
+
+type VocabularyCollection = {
+  id: string;
+  title: string;
+  description: string;
+  visibility: "PRIVATE" | "UNLISTED" | "PUBLIC";
+  updatedAt: string;
+};
+
+type CollectionVocabulary = {
+  korean?: string;
+  meaning?: string;
+  pronunciation?: string;
+  partOfSpeech?: string;
+  level?: string;
+  hanja?: string;
+  source?: "legacy" | "topik-master";
+};
+
+type VocabularyCollectionItem = {
+  collectionId: string;
+  vocabularyId: string;
+  position: number;
+  personalNote: string;
+  vocabulary: CollectionVocabulary;
+};
+
+type QuestionBankTerm = { id: string; lemma?: string; pattern?: string; meaning_vi?: string | null; topik_level?: string | null };
+type QuestionBankItem = {
+  id: string;
+  question_id: string;
+  exam_type: "TOPIK I" | "TOPIK II";
+  section: "listening" | "reading" | "writing" | "vocabulary" | "grammar";
+  subskill: string;
+  question_number: number | null;
+  question_type: string;
+  question_text: string;
+  passage: string | null;
+  audio_url: string | null;
+  transcript: string | null;
+  options: string[];
+  correct_answer_index: number | null;
+  correct_answer: string | null;
+  explanation_vi: string;
+  explanation_ko: string;
+  difficulty: number;
+  tags: string[];
+  exam_year: number | null;
+  exam_round: string | null;
+  source_kind: string;
+  source_ref: string;
+  source_url: string | null;
+  license_note: string;
+  rights_status: string;
+  vocabulary: QuestionBankTerm[];
+  grammar: QuestionBankTerm[];
 };
 
 const fallbackCatalogExams: CatalogExam[] = [
@@ -112,10 +179,22 @@ const practiceQuestions = [
   { prompt: "여자의 태도로 가장 알맞은 것을 고르십시오.", options: ["걱정스럽다", "만족스럽다", "부끄럽다", "무관심하다"], answer: 1 },
 ];
 
+const practiceTranscripts = [
+  "여자: 안녕하세요. 다음 주 제주도 여행을 예약했는데요. 비가 와도 출발하나요? 그리고 따로 준비해야 할 물건이 있습니까?\n남자: 네, 우산과 편한 신발을 준비해 주세요.",
+  "여자: 오늘 길이 많이 막히네요. 회의에 늦지 않을까요?\n남자: 지하철로 갈아타면 시간을 줄일 수 있을 거예요.",
+  "여자: 보고서 정리가 아직 많이 남았어요.\n남자: 중요한 부분부터 처리하면 시간을 아낄 수 있어요.",
+  "남자: 이 소포를 부산으로 보내려고 하는데요.\n여자: 내용물을 확인한 뒤에 무게를 재겠습니다. 우표는 여기에서 사시면 됩니다.",
+  "남자: 회의 자료를 다 정리했어요?\n여자: 네. 지금 바로 자료를 가지고 회의실로 가겠습니다.",
+  "여자: 이번 문화 행사 신청 기간이 금요일까지 연장되었습니다. 장소와 참가비는 이전과 같습니다.",
+  "여자: 방학에도 회사에서 일해요?\n남자: 네. 전공과 관련된 경험을 쌓기 위해서 인턴으로 일하고 있어요.",
+  "남자: 새로 이용한 도서관은 어땠어요?\n여자: 공간도 넓고 필요한 자료도 많아서 아주 만족스러웠어요.",
+];
+
 const fallbackDashboard: DashboardData = {
   overallProgress: 72,
   streak: 12,
   dueReviews: 9,
+  dueVocabulary: 37,
   examDate: "2026-07-13",
   daysUntilExam: 56,
   skills: [
@@ -128,11 +207,11 @@ const fallbackDashboard: DashboardData = {
   recommendations: [],
 };
 
-function localPracticeSession(): PracticeSession {
+function localPracticeSession(mode: "practice" | "timed" = "practice"): PracticeSession {
   return {
     id: "local-foundation-session",
     persisted: false,
-    mode: "practice",
+    mode,
     status: "active",
     currentPosition: 1,
     remainingSeconds: 25 * 60,
@@ -151,12 +230,19 @@ function localPracticeSession(): PracticeSession {
       position: index + 1,
       skill: "listening",
       subskill: ["speaker-intention", "topic", "opinion", "place", "next-action", "detail-match", "reason", "attitude"][index],
+      questionNumber: index + 1,
       questionType: "multiple-choice",
       prompt: question.prompt,
       passage: null,
       audioUrl: null,
+      transcript: practiceTranscripts[index],
+      translationVi: null,
+      audioDurationSeconds: null,
+      audioSpeakers: [],
+      vocabulary: [],
       options: question.options,
       difficulty: index > 5 ? 4 : 3,
+      tags: ["TOPIK II", "listening", "original"],
       points: 1,
     })),
     answers: [],
@@ -167,7 +253,9 @@ const navItems: { icon: string; label: Screen }[] = [
   { icon: "⌂", label: "Home" },
   { icon: "▦", label: "Dashboard" },
   { icon: "▣", label: "Học tập" },
+  { icon: "▥", label: "Bộ từ cá nhân" },
   { icon: "▶", label: "TOPIK Practice" },
+  { icon: "▤", label: "Ngân hàng câu hỏi" },
   { icon: "◉", label: "Làm bài" },
   { icon: "✓", label: "Kết quả" },
   { icon: "↻", label: "Ôn tập" },
@@ -211,10 +299,77 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
   const [answers, setAnswers] = useState<Record<string, number>>(() => Object.fromEntries(session.answers.flatMap((answer) => answer.selectedAnswerIndex === null ? [] : [[answer.questionId, answer.selectedAnswerIndex]])));
   const [responseTimes, setResponseTimes] = useState<Record<string, number>>(() => Object.fromEntries(session.answers.map((answer) => [answer.questionId, answer.responseTimeMs])));
   const [secondsLeft, setSecondsLeft] = useState(session.remainingSeconds);
-  const [playing, setPlaying] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [speechRate, setSpeechRate] = useState(1);
+  const [audioPlaying, setAudioPlaying] = useState(false);
+  const [audioTime, setAudioTime] = useState(0);
+  const [audioDuration, setAudioDuration] = useState(0);
+  const [replayCount, setReplayCount] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const finishRef = useRef<() => void>(() => undefined);
   const autosaveState = useRef({ answers, responseTimes, current, secondsLeft });
   const question = session.questions[current];
+  const isListening = question.skill === "listening";
+
+  useEffect(() => {
+    window.speechSynthesis?.cancel();
+    audioRef.current?.pause();
+    setAudioPlaying(false);
+    setAudioTime(0);
+    setReplayCount(0);
+    return () => window.speechSynthesis?.cancel();
+  }, [question.id]);
+
+  useEffect(() => {
+    preloadSpeechVoices();
+  }, []);
+
+  const toggleSpeech = () => {
+    if (session.mode === "timed") {
+      setNotice("Chế độ Exam chỉ phát file audio ở tốc độ chuẩn 1×.");
+      return;
+    }
+    if (!question.transcript || !("speechSynthesis" in window)) {
+      setNotice("Thiết bị này chưa hỗ trợ phát giọng Hàn tự động.");
+      return;
+    }
+    if (speaking) {
+      window.speechSynthesis.cancel();
+      setSpeaking(false);
+      return;
+    }
+    speakKorean(question.transcript, {
+      rate: speechRate,
+      onEnd: () => setSpeaking(false),
+      onError: () => {
+        setSpeaking(false);
+        setNotice("Không phát được giọng Hàn trên thiết bị này.");
+      },
+    });
+    setSpeaking(true);
+  };
+
+  const toggleAudio = async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (!audio.paused) {
+      audio.pause();
+      setAudioPlaying(false);
+      return;
+    }
+    if (audio.ended || audio.currentTime >= audio.duration - 0.1) {
+      audio.currentTime = 0;
+      setReplayCount((value) => value + 1);
+    }
+    audio.playbackRate = session.mode === "timed" ? 1 : speechRate;
+    try {
+      await audio.play();
+      setAudioPlaying(true);
+    } catch {
+      setNotice("Trình duyệt đang chặn phát audio. Hãy chạm lại nút Phát.");
+    }
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setSecondsLeft((value) => Math.max(0, value - 1)), 1000);
@@ -302,8 +457,19 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
     });
     onComplete({ correct, total, score: Math.round((correct / total) * 300), accuracy: Math.round((correct / total) * 100), examTitle: session.exam.title, mistakes, persisted: false });
   };
+  finishRef.current = () => { void finish(); };
+
+  useEffect(() => {
+    if (secondsLeft !== 0 || submitting) return;
+    setNotice("Đã hết giờ. Hệ thống đang tự động nộp bài.");
+    finishRef.current();
+  }, [secondsLeft, setNotice, submitting]);
 
   const moveTo = (index: number) => {
+    window.speechSynthesis?.cancel();
+    setSpeaking(false);
+    audioRef.current?.pause();
+    setAudioPlaying(false);
     setCurrent(index);
     void save(answers, index, secondsLeft);
   };
@@ -325,10 +491,12 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
   };
 
   const timerText = `${String(Math.floor(secondsLeft / 60)).padStart(2, "0")}:${String(secondsLeft % 60).padStart(2, "0")}`;
+  const audioTimeText = `${Math.floor(audioTime / 60)}:${String(Math.floor(audioTime % 60)).padStart(2, "0")}`;
+  const audioDurationText = `${Math.floor(audioDuration / 60)}:${String(Math.floor(audioDuration % 60)).padStart(2, "0")}`;
 
   return (
     <section className={`${styles.workspace} ${styles.listeningWorkspace}`}>
-      <ScreenIntro eyebrow="LUYỆN TẬP" title="Luyện nghe thực chiến" description="Bộ đề 15 câu · TOPIK II" />
+      <ScreenIntro eyebrow={session.mode === "timed" ? "EXAM · THI MÔ PHỎNG" : "PRACTICE · LUYỆN CÓ HƯỚNG DẪN"} title={session.exam.title} description={`${session.exam.examType} · ${session.questions.length} câu · ${session.exam.durationMinutes} phút`} />
       <div className={styles.workspaceGrid}>
         <aside className={styles.questionRail} aria-label="Danh sách câu hỏi">
           {session.questions.map((item, index) => (
@@ -338,12 +506,18 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
         <article className={styles.practicePanel}>
           <div className={styles.practiceTop}><div><b>Câu {current + 1} / {session.questions.length}</b><span>{session.persisted ? "Đang autosave" : "Local fallback"} · {question.subskill}</span></div><time>{timerText}</time><button onClick={() => setNotice(`Đã trả lời ${Object.keys(answers).length}/${session.questions.length} câu.`)}>Bản đồ câu hỏi</button></div>
           <div className={styles.practiceProgress}><i style={{ width: `${((current + 1) / session.questions.length) * 100}%` }} /></div>
-          <div className={styles.audioPlayer}>
-            <button aria-label="Tốc độ phát">1.0×</button>
-            <div className={styles.waveform}>{Array.from({ length: 31 }, (_, i) => <i key={i} style={{ height: `${18 + ((i * 17) % 50)}%` }} />)}</div>
-            <button className={styles.pauseButton} aria-label={playing ? "Tạm dừng" : "Phát audio"} onClick={() => setPlaying((value) => !value)}>{playing ? "Ⅱ" : "▶"}</button>
-            <time>00:18 / 01:25</time>
-          </div>
+          {question.passage && <div className={styles.questionPassage}>{question.passage}</div>}
+          {isListening && question.audioUrl && <div className={styles.realAudioPlayer}>
+            <audio ref={audioRef} key={question.audioUrl} preload="metadata" src={question.audioUrl} onLoadedMetadata={(event) => setAudioDuration(event.currentTarget.duration || question.audioDurationSeconds || 0)} onTimeUpdate={(event) => setAudioTime(event.currentTarget.currentTime)} onEnded={() => setAudioPlaying(false)}>Trình duyệt không hỗ trợ audio.</audio>
+            <div className={styles.audioControls}><button onClick={() => void toggleAudio()}>{audioPlaying ? "Ⅱ Tạm dừng" : audioTime > 0 ? "↻ Phát lại" : "▶ Phát audio"}</button><div><span>{audioTimeText}</span><progress max={audioDuration || 1} value={audioTime} /><span>{audioDurationText}</span></div>{session.mode === "practice" ? <label><span>Tốc độ</span><select value={speechRate} onChange={(event) => { const rate = Number(event.target.value); setSpeechRate(rate); if (audioRef.current) audioRef.current.playbackRate = rate; }}><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option></select></label> : <b>1× cố định</b>}</div>
+            <small>{question.audioSpeakers.map((speaker) => `${speaker.gender === "female" ? "Nữ" : "Nam"}: ${speaker.name}`).join(" · ") || "Giọng chuẩn Hàn"} · đã phát lại {replayCount} lần</small>
+          </div>}
+          {isListening && !question.audioUrl && question.transcript && session.mode === "practice" && <div className={styles.speechFallback}><div><button onClick={toggleSpeech}>{speaking ? "■ Dừng" : "▶ Phát giọng Hàn dự phòng"}</button><label><span>Tốc độ</span><select value={speechRate} onChange={(event) => setSpeechRate(Number(event.target.value))}><option value="0.75">0.75×</option><option value="1">1×</option><option value="1.25">1.25×</option></select></label></div></div>}
+          {isListening && !question.audioUrl && !question.transcript && <div className={styles.audioPlayer}><span>Audio chưa có trong bản fallback</span><div className={styles.waveform}>{Array.from({ length: 31 }, (_, i) => <i key={i} style={{ height: `${18 + ((i * 17) % 50)}%` }} />)}</div></div>}
+          {isListening && !question.audioUrl && session.mode === "timed" && <div className={styles.catalogError}>Câu này chưa có file audio nên không thể dùng đúng chuẩn Exam.</div>}
+          {isListening && session.mode === "practice" && question.transcript && <details className={styles.practiceTranscript}><summary>Transcript</summary><p>{question.transcript}</p></details>}
+          {isListening && session.mode === "practice" && question.translationVi && <details className={styles.practiceTranscript}><summary>Dịch tiếng Việt</summary><p>{question.translationVi}</p></details>}
+          {isListening && session.mode === "practice" && question.vocabulary.length > 0 && <div className={styles.listeningVocabulary}><strong>Tra từ nhanh</strong><div>{question.vocabulary.map((word) => <button key={word.id} onClick={() => setNotice(`${word.lemma}: ${word.meaningVi || "Chưa có nghĩa tiếng Việt"}`)}>{word.lemma}</button>)}</div></div>}
           <h2>{question.prompt}</h2>
           <div className={styles.answerGrid}>
             {question.options.map((answer, index) => (
@@ -352,7 +526,7 @@ function ListeningScreen({ session, setNotice, onComplete }: { session: Practice
           </div>
           <div className={styles.practiceActions}><button disabled={current === 0 || submitting} onClick={() => moveTo(Math.max(0, current - 1))}>‹ Câu trước</button><button className={styles.answerButton} disabled={submitting} onClick={next}>{submitting ? "Đang chấm..." : current === session.questions.length - 1 ? "Nộp bài" : "Lưu & tiếp tục"}</button><button disabled={current === session.questions.length - 1 || submitting} onClick={() => moveTo(Math.min(session.questions.length - 1, current + 1))}>Câu sau ›</button></div>
         </article>
-        <aside className={styles.helpPanel}><strong>Trợ giúp học tập</strong><span>💡 Tập trung vào từ khóa về mục đích.</span><p>Đáp án bạn chọn sẽ được phân tích khi kết nối dữ liệu.</p></aside>
+        {session.mode === "practice" && <aside className={styles.helpPanel}><strong>Trợ giúp học tập</strong><span>💡 Tập trung vào từ khóa về mục đích.</span><p>Đáp án bạn chọn sẽ được phân tích khi kết nối dữ liệu.</p></aside>}
       </div>
     </section>
   );
@@ -560,7 +734,7 @@ function DashboardScreen({ goTo, notice, setNotice, dashboard, profile }: { goTo
         <div><span>Mục tiêu hiện tại</span><strong>{profile.target_level}</strong></div>
         <div><span>Countdown ngày thi</span><strong>{dashboard.daysUntilExam === null ? "—" : `D-${dashboard.daysUntilExam}`} <small>{dateLabel}</small></strong></div>
         <button onClick={() => goTo("Kế hoạch")}>Xem kế hoạch</button>
-        <div className={styles.streak}><span>🔥</span><strong>{dashboard.streak} ngày<small>{dashboard.dueReviews} lượt ôn đến hạn</small></strong></div>
+        <div className={styles.streak}><span>🔥</span><strong>{dashboard.streak} ngày<small>{dashboard.dueReviews} câu · {dashboard.dueVocabulary} từ cần ôn</small></strong></div>
       </section>
       <section className={styles.statsGrid} aria-label="Tổng quan học tập">
         <article className={styles.card}><div className={styles.cardHeader}><strong>Tổng tiến độ</strong><span>Theo mastery</span></div><div className={styles.progressWrap}><ProgressRing value={dashboard.overallProgress || fallbackDashboard.overallProgress} /><ul className={styles.skillList}>{visibleSkills.map((skill, index) => <li key={skill.skill}><i className={[styles.tealDot, styles.blueDot, styles.purpleDot, styles.coralDot][index]} />{skillLabels[skill.skill] || skill.skill} <b>{skill.mastery}%</b></li>)}</ul></div></article>
@@ -599,22 +773,23 @@ function StudyHub({ goTo, onStart }: { goTo: (screen: Screen) => void; onStart: 
     { icon: "✍️", title: "Writing", description: "Câu 51–54 và bài viết TOPIK II", count: "12 bài", tone: "violet", screen: "Viết bài" },
     { icon: "가", title: "Vocabulary", description: "Từ vựng theo cấp và tần suất", count: `${catalogCounts.vocabulary.toLocaleString("vi-VN")} từ`, tone: "green", screen: "Vocabulary" },
     { icon: "文", title: "Grammar", description: "Ngữ pháp trọng tâm và gần nghĩa", count: `${catalogCounts.grammar.toLocaleString("vi-VN")} mẫu`, tone: "orange", screen: "Grammar" },
+    { icon: "▤", title: "Question Bank", description: "Lọc câu theo cấp, kỹ năng và dạng bài", count: "TOPIK I–II", tone: "blue", screen: "Ngân hàng câu hỏi" },
   ];
 
   return <section className={styles.workspace}><ScreenIntro eyebrow="HỌC TẬP" title="Chọn kỹ năng cần luyện" description="Mỗi kỹ năng có lộ trình và tiến độ riêng." /><div className={styles.skillHub}>{skills.map((item) => <button key={item.title} className={`${styles.skillHubCard} ${styles[item.tone]}`} onClick={() => item.start ? void onStart() : item.screen && goTo(item.screen)}><i>{item.icon}</i><span><strong>{item.title}</strong><small>{item.description}</small><em>{item.count}</em></span><b>→</b></button>)}</div></section>;
 }
 
-function ReadingHub({ goTo }: { goTo: (screen: Screen) => void }) {
+function ReadingHub({ goTo, onOpenBank }: { goTo: (screen: Screen) => void; onOpenBank: () => void }) {
   const modes = [
     { icon: "핵", title: "Tìm ý chính", description: "Nhận diện chủ đề và câu trung tâm", count: "TOPIK I–II" },
     { icon: "順", title: "Sắp xếp đoạn", description: "Nối mạch logic giữa các câu", count: "Dạng câu 13–15" },
     { icon: "推", title: "Suy luận", description: "Đọc ẩn ý và thái độ người viết", count: "Dạng nâng cao" },
     { icon: "速", title: "Đọc bấm giờ", description: "Rèn tốc độ theo thời lượng thi thật", count: "Chế độ tập trung" },
   ];
-  return <section className={styles.workspace}><button className={styles.catalogBack} onClick={() => goTo("Học tập")}>← Học tập</button><ScreenIntro eyebrow="READING" title="Luyện đọc theo dạng câu" description="Reading đã có không gian riêng; bộ câu đọc sẽ được nối vào đây ở giai đoạn dữ liệu đề thi." /><div className={styles.skillHub}>{modes.map((item) => <article key={item.title} className={`${styles.skillHubCard} ${styles.blue}`}><i>{item.icon}</i><span><strong>{item.title}</strong><small>{item.description}</small><em>{item.count}</em></span></article>)}</div><button className={styles.catalogPrimary} onClick={() => goTo("TOPIK Practice")}>Mở kho đề Reading →</button></section>;
+  return <section className={styles.workspace}><button className={styles.catalogBack} onClick={() => goTo("Học tập")}>← Học tập</button><ScreenIntro eyebrow="READING" title="Luyện đọc theo dạng câu" description="Chọn dạng đọc trọng tâm, sau đó mở ngân hàng để lọc đúng cấp độ và độ khó." /><div className={styles.skillHub}>{modes.map((item) => <button key={item.title} className={`${styles.skillHubCard} ${styles.blue}`} onClick={onOpenBank}><i>{item.icon}</i><span><strong>{item.title}</strong><small>{item.description}</small><em>{item.count}</em></span><b>→</b></button>)}</div><button className={styles.catalogPrimary} onClick={onOpenBank}>Mở ngân hàng Reading →</button></section>;
 }
 
-function LearningCatalog({ kind, goTo }: { kind: "vocabulary" | "grammar"; goTo: (screen: Screen) => void }) {
+function LearningCatalog({ kind, goTo, setNotice }: { kind: "vocabulary" | "grammar"; goTo: (screen: Screen) => void; setNotice: (message: string) => void }) {
   const pageSize = 30;
   const [items, setItems] = useState<(VocabularyCatalogItem | GrammarCatalogItem)[]>([]);
   const [query, setQuery] = useState("");
@@ -623,7 +798,26 @@ function LearningCatalog({ kind, goTo }: { kind: "vocabulary" | "grammar"; goTo:
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState("");
+  const [srsStates, setSrsStates] = useState<Record<string, VocabularySrsState>>({});
+  const [collections, setCollections] = useState<VocabularyCollection[]>([]);
+  const [selectedCollectionId, setSelectedCollectionId] = useState("");
+  const [savingWord, setSavingWord] = useState<string | null>(null);
   const isVocabulary = kind === "vocabulary";
+
+  useEffect(() => {
+    if (!isVocabulary) return;
+    let active = true;
+    void apiFetch("/api/collections")
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        if (!active || !payload?.collections) return;
+        const next = payload.collections as VocabularyCollection[];
+        setCollections(next);
+        setSelectedCollectionId((current) => current || next[0]?.id || "");
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [isVocabulary]);
 
   useEffect(() => {
     let active = true;
@@ -648,6 +842,21 @@ function LearningCatalog({ kind, goTo }: { kind: "vocabulary" | "grammar"; goTo:
     return () => { active = false; window.clearTimeout(timer); };
   }, [kind, level, query]);
 
+  useEffect(() => {
+    if (!isVocabulary) return;
+    const ids = items.map((item) => item.id).join(",");
+    if (!ids) { setSrsStates({}); return; }
+    let active = true;
+    void apiFetch(`/api/topik-master/vocabulary-srs?ids=${encodeURIComponent(ids)}&limit=100`)
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((payload) => {
+        if (!active || !payload?.states) return;
+        setSrsStates(Object.fromEntries((payload.states as VocabularySrsState[]).map((state) => [state.vocabularyId, state])));
+      })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [isVocabulary, items]);
+
   const loadMore = async () => {
     setLoadingMore(true);
     const params = new URLSearchParams({ resource: kind, limit: String(pageSize), offset: String(items.length) });
@@ -666,6 +875,30 @@ function LearningCatalog({ kind, goTo }: { kind: "vocabulary" | "grammar"; goTo:
     }
   };
 
+  const saveSrs = async (vocabularyId: string, update: { rating?: "again" | "hard" | "good" | "easy"; bookmarked?: boolean }) => {
+    setSavingWord(vocabularyId);
+    try {
+      const response = await apiFetch("/api/topik-master/vocabulary-srs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vocabularyId, ...update }) });
+      const payload = await response.json();
+      if (!response.ok || !payload.state) throw new Error(payload.error || "Không lưu được tiến độ từ.");
+      setSrsStates((current) => ({ ...current, [vocabularyId]: payload.state as VocabularySrsState }));
+      setNotice(update.rating ? `Đã xếp lịch ôn: ${update.rating}.` : update.bookmarked ? "Đã bookmark từ." : "Đã bỏ bookmark.");
+    } catch (reason) {
+      setNotice(reason instanceof Error ? reason.message : "Không lưu được tiến độ từ.");
+    } finally {
+      setSavingWord(null);
+    }
+  };
+
+  const addToCollection = async (vocabularyId: string) => {
+    if (!selectedCollectionId) { setNotice("Hãy tạo một bộ từ cá nhân trước."); goTo("Bộ từ cá nhân"); return; }
+    setSavingWord(vocabularyId);
+    const response = await apiFetch(`/api/collections/${selectedCollectionId}/items`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vocabularyId }) });
+    const payload = await response.json();
+    setSavingWord(null);
+    setNotice(response.ok ? "Đã thêm từ vào bộ cá nhân." : payload.error || "Không thêm được từ vào bộ.");
+  };
+
   return <section className={styles.workspace}>
     <button className={styles.catalogBack} onClick={() => goTo("Học tập")}>← Học tập</button>
     <ScreenIntro eyebrow={isVocabulary ? "VOCABULARY" : "GRAMMAR"} title={isVocabulary ? "Kho từ vựng tiếng Hàn" : "Kho ngữ pháp TOPIK"} description={isVocabulary ? `${total.toLocaleString("vi-VN")} mục trong từ điển riêng của bạn.` : `${total.toLocaleString("vi-VN")} mẫu câu trong kho học riêng của bạn.`} />
@@ -673,11 +906,13 @@ function LearningCatalog({ kind, goTo }: { kind: "vocabulary" | "grammar"; goTo:
       <label><span className={styles.srOnly}>{isVocabulary ? "Tìm từ vựng" : "Tìm ngữ pháp"}</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={isVocabulary ? "Tìm từ tiếng Hàn, ví dụ: 가다" : "Tìm mẫu ngữ pháp, ví dụ: -기 위해"} /><b>⌕</b></label>
       <div className={styles.filterRow}>{["Tất cả", "TOPIK I", "TOPIK II", "Chưa phân cấp"].map((item) => <button key={item} className={level === item ? styles.filterActive : ""} onClick={() => setLevel(item)}>{item}</button>)}</div>
     </div>
+    {isVocabulary && <div className={styles.vocabularyActionsBar}><button onClick={() => goTo("Bộ từ cá nhân")}>▥ Bộ từ của tôi</button><label><span>Thêm nhanh vào</span><select value={selectedCollectionId} onChange={(event) => setSelectedCollectionId(event.target.value)}><option value="">Chưa có bộ từ</option>{collections.map((collection) => <option key={collection.id} value={collection.id}>{collection.title}</option>)}</select></label></div>}
     {error && <p className={styles.catalogError} role="alert">{error}</p>}
     {loading ? <div className={styles.catalogState}>Đang mở kho dữ liệu…</div> : items.length === 0 ? <div className={styles.catalogState}>Không tìm thấy mục phù hợp.</div> : <div className={styles.catalogList}>
       {items.map((rawItem) => isVocabulary ? (() => {
         const item = rawItem as VocabularyCatalogItem;
-        return <article key={item.id}><div className={styles.catalogItemTop}><span className={styles.catalogGlyph}>가</span><div><h2>{item.lemma}{item.hanja ? <small> · {item.hanja}</small> : null}</h2><p>{item.meaning_vi || "Chưa có nghĩa tiếng Việt"}</p></div><span className={item.topik_level === "TOPIK I" ? styles.levelOne : styles.levelTwo}>{item.topik_level || item.nikl_level || "NIKL"}</span></div><div className={styles.catalogMeta}><span>{item.part_of_speech || "Từ vựng"}</span>{item.frequency_rank ? <span>Tần suất #{item.frequency_rank.toLocaleString("vi-VN")}</span> : null}</div>{item.explanation_ko ? <p className={styles.catalogExplanation}>{item.explanation_ko}</p> : null}</article>;
+        const state = srsStates[item.id];
+        return <article key={item.id}><div className={styles.catalogItemTop}><span className={styles.catalogGlyph}>가</span><div><h2>{item.lemma}{item.hanja ? <small> · {item.hanja}</small> : null}</h2><p>{item.meaning_vi || "Chưa có nghĩa tiếng Việt"}</p></div><span className={item.topik_level === "TOPIK I" ? styles.levelOne : styles.levelTwo}>{item.topik_level || item.nikl_level || "NIKL"}</span></div><div className={styles.catalogMeta}><span>{item.part_of_speech || "Từ vựng"}</span>{item.frequency_rank ? <span>Tần suất #{item.frequency_rank.toLocaleString("vi-VN")}</span> : null}<span>{state?.status === "due" ? "Cần ôn" : state?.status === "mastered" ? "Đã nhớ" : state?.status === "hard" ? "Khó" : state ? "Đang học" : "Chưa học"}</span></div>{item.explanation_ko ? <p className={styles.catalogExplanation}>{item.explanation_ko}</p> : null}<div className={styles.wordStudyActions}><button disabled={savingWord === item.id} onClick={() => void saveSrs(item.id, { bookmarked: !state?.bookmarked })}>{state?.bookmarked ? "★ Đã lưu" : "☆ Bookmark"}</button><button disabled={savingWord === item.id} onClick={() => void addToCollection(item.id)}>＋ Bộ từ</button><div><button disabled={savingWord === item.id} onClick={() => void saveSrs(item.id, { rating: "again" })}>Lại</button><button disabled={savingWord === item.id} onClick={() => void saveSrs(item.id, { rating: "hard" })}>Khó</button><button disabled={savingWord === item.id} onClick={() => void saveSrs(item.id, { rating: "good" })}>Tốt</button><button disabled={savingWord === item.id} onClick={() => void saveSrs(item.id, { rating: "easy" })}>Dễ</button></div></div></article>;
       })() : (() => {
         const item = rawItem as GrammarCatalogItem;
         const example = Array.isArray(item.examples) ? item.examples[0] : undefined;
@@ -688,8 +923,227 @@ function LearningCatalog({ kind, goTo }: { kind: "vocabulary" | "grammar"; goTo:
   </section>;
 }
 
-function PracticeLibrary({ onStart, onOpenReading, onOpenWriting }: { onStart: (examKey?: string) => Promise<void>; onOpenReading: () => void; onOpenWriting: () => void }) {
+function PersonalCollectionsScreen({ goTo, setNotice }: { goTo: (screen: Screen) => void; setNotice: (message: string) => void }) {
+  const [collections, setCollections] = useState<VocabularyCollection[]>([]);
+  const [selectedId, setSelectedId] = useState("");
+  const [items, setItems] = useState<VocabularyCollectionItem[]>([]);
+  const [newTitle, setNewTitle] = useState("");
+  const [mode, setMode] = useState<"list" | "flashcard" | "quiz">("list");
+  const [cardIndex, setCardIndex] = useState(0);
+  const [flipped, setFlipped] = useState(false);
+  const [quizChoice, setQuizChoice] = useState<string | null>(null);
+  const selected = collections.find((collection) => collection.id === selectedId);
+  const currentItem = items[cardIndex % Math.max(1, items.length)];
+
+  const reloadCollections = async (preferredId?: string) => {
+    const response = await apiFetch("/api/collections");
+    const payload = await response.json();
+    if (!response.ok) { setNotice(payload.error || "Không tải được bộ từ."); return; }
+    const next = (payload.collections || []) as VocabularyCollection[];
+    setCollections(next);
+    setSelectedId((current) => preferredId || (next.some((item) => item.id === current) ? current : next[0]?.id || ""));
+  };
+
+  useEffect(() => { void reloadCollections(); }, []);
+
+  useEffect(() => {
+    if (!selectedId) { setItems([]); return; }
+    let active = true;
+    void apiFetch(`/api/collections/${selectedId}`)
+      .then(async (response) => response.ok ? response.json() : null)
+      .then((payload) => { if (active && payload?.items) { setItems(payload.items as VocabularyCollectionItem[]); setCardIndex(0); setFlipped(false); setQuizChoice(null); } })
+      .catch(() => undefined);
+    return () => { active = false; };
+  }, [selectedId]);
+
+  const createCollection = async () => {
+    if (!newTitle.trim()) { setNotice("Hãy nhập tên bộ từ."); return; }
+    const response = await apiFetch("/api/collections", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: newTitle, visibility: "PRIVATE" }) });
+    const payload = await response.json();
+    if (!response.ok || !payload.collection) { setNotice(payload.error || "Không tạo được bộ từ."); return; }
+    setNewTitle("");
+    await reloadCollections(payload.collection.id);
+    setNotice("Đã tạo bộ từ riêng tư.");
+  };
+
+  const renameCollection = async () => {
+    if (!selected) return;
+    const title = window.prompt("Tên mới cho bộ từ", selected.title)?.trim();
+    if (!title || title === selected.title) return;
+    const response = await apiFetch(`/api/collections/${selected.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title }) });
+    const payload = await response.json();
+    if (response.ok) { await reloadCollections(selected.id); setNotice("Đã đổi tên bộ từ."); }
+    else setNotice(payload.error || "Không đổi được tên bộ từ.");
+  };
+
+  const updateVisibility = async (visibility: VocabularyCollection["visibility"]) => {
+    if (!selected) return;
+    const response = await apiFetch(`/api/collections/${selected.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ visibility }) });
+    const payload = await response.json();
+    if (response.ok) { await reloadCollections(selected.id); setNotice(visibility === "PRIVATE" ? "Bộ từ chỉ mình bạn xem." : "Đã bật chia sẻ bộ từ."); }
+    else setNotice(payload.error || "Không đổi được quyền xem.");
+  };
+
+  const deleteCollection = async () => {
+    if (!selected || !window.confirm(`Xóa bộ “${selected.title}”? Từ gốc trong kho vẫn được giữ.`)) return;
+    const response = await apiFetch(`/api/collections/${selected.id}`, { method: "DELETE" });
+    const payload = await response.json();
+    if (response.ok) { await reloadCollections(); setNotice("Đã xóa bộ từ; kho từ gốc không bị ảnh hưởng."); }
+    else setNotice(payload.error || "Không xóa được bộ từ.");
+  };
+
+  const removeWord = async (item: VocabularyCollectionItem) => {
+    const response = await apiFetch(`/api/collections/${item.collectionId}/items/${item.vocabularyId}`, { method: "DELETE" });
+    const payload = await response.json();
+    if (response.ok) { setItems((current) => current.filter((word) => word.vocabularyId !== item.vocabularyId)); setNotice("Đã bỏ từ khỏi bộ."); }
+    else setNotice(payload.error || "Không bỏ được từ khỏi bộ.");
+  };
+
+  const rateCard = async (rating: "again" | "hard" | "good" | "easy") => {
+    if (!currentItem) return;
+    const endpoint = currentItem.vocabulary.source === "topik-master"
+      ? "/api/topik-master/vocabulary-srs"
+      : `/api/collections/${currentItem.collectionId}/progress/${currentItem.vocabularyId}`;
+    const response = await apiFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ vocabularyId: currentItem.vocabularyId, rating }) });
+    const payload = await response.json();
+    if (!response.ok) { setNotice(payload.error || "Không lưu được lượt ôn."); return; }
+    setNotice(`Đã lưu ${rating}; lịch ôn tiếp theo đã cập nhật.`);
+    setCardIndex((index) => (index + 1) % Math.max(1, items.length));
+    setFlipped(false);
+    setQuizChoice(null);
+  };
+
+  const quizOptions = currentItem
+    ? [currentItem, ...items.filter((item) => item.vocabularyId !== currentItem.vocabularyId)].slice(0, 4).map((item) => item.vocabulary.meaning || "Chưa có nghĩa")
+    : [];
+
+  return <section className={styles.workspace}>
+    <button className={styles.catalogBack} onClick={() => goTo("Vocabulary")}>← Kho từ vựng</button>
+    <ScreenIntro eyebrow="PERSONAL VOCABULARY" title="Bộ từ của tôi" description="Tạo collection, học flashcard, làm quiz và đồng bộ lịch ôn SRS." />
+    <div className={styles.collectionCreate}><input value={newTitle} maxLength={120} onChange={(event) => setNewTitle(event.target.value)} placeholder="Ví dụ: 🔥 TOPIK II từ hay gặp" onKeyDown={(event) => { if (event.key === "Enter") void createCollection(); }} /><button onClick={() => void createCollection()}>＋ Tạo bộ riêng tư</button></div>
+    <div className={styles.collectionsWorkspace}>
+      <aside className={styles.collectionRail}>{collections.length ? collections.map((collection) => <button key={collection.id} className={selectedId === collection.id ? styles.collectionActive : ""} onClick={() => setSelectedId(collection.id)}><b>{collection.title}</b><span>{collection.visibility === "PRIVATE" ? "Chỉ mình tôi" : collection.visibility === "UNLISTED" ? "Có link mới xem" : "Công khai"}</span></button>) : <p>Chưa có bộ từ. Tạo bộ đầu tiên ở trên nhé.</p>}</aside>
+      <div className={styles.collectionPanel}>{selected ? <>
+        <div className={styles.collectionHeader}><div><h2>{selected.title}</h2><p>{items.length} từ · {selected.visibility}</p></div><div><button onClick={() => void renameCollection()}>Đổi tên</button><select value={selected.visibility} onChange={(event) => void updateVisibility(event.target.value as VocabularyCollection["visibility"])}><option value="PRIVATE">Chỉ mình tôi</option><option value="UNLISTED">Chia sẻ bằng link</option><option value="PUBLIC">Công khai</option></select><button onClick={() => void deleteCollection()}>Xóa bộ</button></div></div>
+        <div className={styles.collectionModes}><button className={mode === "list" ? styles.filterActive : ""} onClick={() => setMode("list")}>Danh sách</button><button className={mode === "flashcard" ? styles.filterActive : ""} onClick={() => { setMode("flashcard"); setFlipped(false); }}>Flashcard</button><button className={mode === "quiz" ? styles.filterActive : ""} onClick={() => { setMode("quiz"); setQuizChoice(null); }}>Quiz</button></div>
+        {!items.length ? <div className={styles.catalogState}>Bộ này chưa có từ. Mở Kho từ vựng và nhấn “＋ Bộ từ”.</div> : mode === "list" ? <div className={styles.collectionWordList}>{items.map((item) => <article key={item.vocabularyId}><div><b>{item.vocabulary.korean || "Từ vựng"}</b><span>{item.vocabulary.meaning || "Chưa có nghĩa"}</span></div><small>{item.vocabulary.level || item.vocabulary.partOfSpeech || "TOPIK Master"}</small><button onClick={() => void removeWord(item)}>Bỏ khỏi bộ</button></article>)}</div> : mode === "flashcard" && currentItem ? <div className={styles.flashcardStudy}><button className={styles.flashcardFace} onClick={() => setFlipped((value) => !value)}><small>{cardIndex + 1}/{items.length} · chạm để lật</small><strong>{flipped ? currentItem.vocabulary.meaning || "Chưa có nghĩa" : currentItem.vocabulary.korean || "Từ vựng"}</strong><span>{flipped ? currentItem.vocabulary.korean : currentItem.vocabulary.pronunciation}</span></button><div className={styles.srsRatingButtons}><button onClick={() => void rateCard("again")}>Lại</button><button onClick={() => void rateCard("hard")}>Khó</button><button onClick={() => void rateCard("good")}>Tốt</button><button onClick={() => void rateCard("easy")}>Dễ</button></div></div> : currentItem ? <div className={styles.collectionQuiz}><small>Câu {cardIndex + 1}/{items.length}</small><h2>{currentItem.vocabulary.korean}</h2><p>Chọn nghĩa đúng</p><div>{quizOptions.map((option) => <button key={option} className={quizChoice === option ? (option === currentItem.vocabulary.meaning ? styles.quizCorrect : styles.quizWrong) : ""} onClick={() => setQuizChoice(option)}>{option}</button>)}</div>{quizChoice && <button className={styles.catalogPrimary} onClick={() => { setCardIndex((index) => (index + 1) % items.length); setQuizChoice(null); }}>Câu tiếp theo →</button>}</div> : null}
+      </> : <div className={styles.catalogState}>Chọn hoặc tạo một bộ từ.</div>}</div>
+    </div>
+  </section>;
+}
+
+function QuestionBankScreen({ goTo, initialSection = "Tất cả" }: { goTo: (screen: Screen) => void; initialSection?: string }) {
+  const pageSize = 24;
+  const [items, setItems] = useState<QuestionBankItem[]>([]);
+  const [total, setTotal] = useState(0);
+  const [query, setQuery] = useState("");
+  const [examType, setExamType] = useState("Tất cả");
+  const [section, setSection] = useState(initialSection);
+  const [questionType, setQuestionType] = useState("Tất cả");
+  const [difficulty, setDifficulty] = useState("Tất cả");
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState("");
+
+  const paramsFor = (offset: number) => {
+    const params = new URLSearchParams({ resource: "questions", limit: String(pageSize), offset: String(offset) });
+    if (query.trim()) params.set("search", query.trim());
+    if (examType !== "Tất cả") params.set("examType", examType);
+    if (section !== "Tất cả") params.set("section", section.toLowerCase());
+    if (questionType !== "Tất cả") params.set("questionType", questionType);
+    if (difficulty !== "Tất cả") params.set("difficulty", difficulty);
+    return params;
+  };
+
+  useEffect(() => {
+    let active = true;
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      setError("");
+      void apiFetch(`/api/topik-master/catalog?${paramsFor(0).toString()}`)
+        .then(async (response) => {
+          const payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || "Không tải được ngân hàng câu hỏi.");
+          if (active) {
+            setItems(payload.data || []);
+            setTotal(Number(payload.total || 0));
+            setExpanded(null);
+          }
+        })
+        .catch((reason: unknown) => { if (active) setError(reason instanceof Error ? reason.message : "Không tải được ngân hàng câu hỏi."); })
+        .finally(() => { if (active) setLoading(false); });
+    }, 250);
+    return () => { active = false; window.clearTimeout(timer); };
+  // paramsFor is intentionally derived from these filter states.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [difficulty, examType, questionType, query, section]);
+
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const response = await apiFetch(`/api/topik-master/catalog?${paramsFor(items.length).toString()}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Không tải thêm được câu hỏi.");
+      setItems((current) => [...current, ...(payload.data || [])]);
+      setTotal(Number(payload.total || total));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Không tải thêm được câu hỏi.");
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const clearFilters = () => {
+    setQuery(""); setExamType("Tất cả"); setSection("Tất cả"); setQuestionType("Tất cả"); setDifficulty("Tất cả");
+  };
+
+  return <section className={styles.workspace}>
+    <button className={styles.catalogBack} onClick={() => goTo("TOPIK Practice")}>← TOPIK Practice</button>
+    <ScreenIntro eyebrow="QUESTION BANK" title="Ngân hàng câu hỏi TOPIK" description={`${total.toLocaleString("vi-VN")} câu đã xuất bản, có nguồn và trạng thái quyền sử dụng rõ ràng.`} />
+    <div className={styles.questionBankToolbar}>
+      <label className={styles.questionSearch}><span className={styles.srOnly}>Tìm câu hỏi</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Tìm trong đề bài, đoạn văn hoặc transcript…" /></label>
+      <select aria-label="Loại kỳ thi" value={examType} onChange={(event) => setExamType(event.target.value)}>{["Tất cả", "TOPIK I", "TOPIK II"].map((item) => <option key={item}>{item}</option>)}</select>
+      <select aria-label="Kỹ năng" value={section} onChange={(event) => setSection(event.target.value)}>{["Tất cả", "Listening", "Reading", "Writing"].map((item) => <option key={item}>{item}</option>)}</select>
+      <select aria-label="Dạng câu" value={questionType} onChange={(event) => setQuestionType(event.target.value)}>{["Tất cả", "multiple-choice", "response", "place", "next-action", "detail-match", "vocabulary-blank", "grammar-blank", "main-idea", "context-blank", "inference", "sentence-order", "headline"].map((item) => <option key={item}>{item}</option>)}</select>
+      <select aria-label="Độ khó" value={difficulty} onChange={(event) => setDifficulty(event.target.value)}>{["Tất cả", "1", "2", "3", "4", "5"].map((item) => <option key={item} value={item}>{item === "Tất cả" ? item : `Độ khó ${item}`}</option>)}</select>
+      <button onClick={clearFilters}>Xóa lọc</button>
+    </div>
+    <div className={styles.questionBankSummary}><span><b>{items.length}</b>/{total.toLocaleString("vi-VN")} câu đang hiển thị</span><span><i className={styles.sourceOriginal} /> Tự biên soạn</span><span><i className={styles.sourceLicensed} /> Được cấp quyền</span></div>
+    {loading ? <div className={styles.catalogState}>Đang tải ngân hàng câu hỏi…</div> : error ? <div className={styles.catalogState}><b>Chưa thể tải dữ liệu</b><span>{error}</span></div> : items.length === 0 ? <div className={styles.catalogState}><b>Không có câu phù hợp.</b><span>Hãy thử xóa bớt bộ lọc.</span></div> : <div className={styles.questionBankList}>{items.map((item) => {
+      const open = expanded === item.id;
+      return <article key={item.id} className={open ? styles.questionCardOpen : ""}>
+        <button className={styles.questionCardHead} aria-expanded={open} onClick={() => setExpanded(open ? null : item.id)}>
+          <span className={item.exam_type === "TOPIK I" ? styles.levelOne : styles.levelTwo}>{item.exam_type}</span>
+          <span className={styles.questionSection}>{item.section}</span>
+          <span className={styles.questionNumber}>#{item.question_number || "—"}</span>
+          <span className={styles.questionDifficulty}>Khó {item.difficulty}/5</span>
+          <b>{item.question_type}</b><em>{open ? "Thu gọn ↑" : "Xem đáp án ↓"}</em>
+        </button>
+        <div className={styles.questionCardBody}>
+          <h2>{item.question_text}</h2>
+          {item.passage && <p className={styles.bankPassage}>{item.passage}</p>}
+          {item.transcript && <details className={styles.bankTranscript}><summary>Transcript</summary><p>{item.transcript}</p></details>}
+          {item.audio_url && <audio controls preload="none" src={item.audio_url}>Trình duyệt không hỗ trợ audio.</audio>}
+          <ol>{item.options.map((option, index) => <li key={`${item.id}-${index}`} className={open && index === item.correct_answer_index ? styles.correctOption : ""}><span>{index + 1}</span>{option}</li>)}</ol>
+        </div>
+        {open && <div className={styles.questionAnswer}>
+          <div><span>Đáp án đúng</span><strong>{item.correct_answer_index == null ? "Tự luận" : `${item.correct_answer_index + 1}. ${item.correct_answer || ""}`}</strong></div>
+          <div><span>Giải thích tiếng Việt</span><p>{item.explanation_vi || "Chưa có giải thích."}</p></div>
+          {item.explanation_ko && <div><span>한국어 해설</span><p>{item.explanation_ko}</p></div>}
+          {(item.vocabulary.length > 0 || item.grammar.length > 0) && <div className={styles.questionLinks}><span>Liên kết học tập</span><p>{item.vocabulary.map((term) => <i key={term.id}>{term.lemma}</i>)}{item.grammar.map((term) => <i key={term.id}>{term.pattern}</i>)}</p></div>}
+          <div className={styles.questionTags}>{item.tags.map((tag) => <span key={tag}>#{tag}</span>)}</div>
+          <small>Nguồn: {item.source_ref} · {item.rights_status === "original" ? "Nội dung tự biên soạn" : item.rights_status === "licensed" ? "Có quyền sử dụng" : "Cần kiểm tra quyền"}</small>
+        </div>}
+      </article>;
+    })}</div>}
+    {!loading && items.length < total && <button className={styles.loadMoreButton} disabled={loadingMore} onClick={() => void loadMore()}>{loadingMore ? "Đang tải…" : "Tải thêm câu hỏi"}</button>}
+  </section>;
+}
+
+function PracticeLibrary({ onStart, onOpenReading, onOpenWriting, onOpenBank }: { onStart: (examKey?: string, mode?: "practice" | "timed") => Promise<void>; onOpenReading: () => void; onOpenWriting: () => void; onOpenBank: () => void }) {
   const [filter, setFilter] = useState("Tất cả");
+  const [mode, setMode] = useState<"practice" | "timed">("practice");
   const [starting, setStarting] = useState<string | null>(null);
   const [exams, setExams] = useState<CatalogExam[]>(fallbackCatalogExams);
 
@@ -712,10 +1166,10 @@ function PracticeLibrary({ onStart, onOpenReading, onOpenWriting }: { onStart: (
   });
   const start = async (exam: CatalogExam) => {
     setStarting(exam.external_key);
-    await onStart(exam.external_key);
+    await onStart(exam.external_key, mode);
     setStarting(null);
   };
-  return <section className={styles.workspace}><ScreenIntro eyebrow="TOPIK PRACTICE" title="Kho đề luyện thi" description={`${visibleExams.length} bộ đề phù hợp với bộ lọc hiện tại.`} /><div className={styles.filterRow}>{["Tất cả", "TOPIK I", "TOPIK II", "Listening", "Reading", "Writing"].map((item) => <button key={item} className={filter === item ? styles.filterActive : ""} onClick={() => setFilter(item)}>{item}</button>)}</div><div className={styles.examLibrary}>{visibleExams.map((exam) => { const skill = String(exam.metadata?.skill || (exam.title.toLowerCase().includes("listening") ? "Listening" : exam.title.toLowerCase().includes("reading") ? "Reading" : exam.title.toLowerCase().includes("writing") || exam.title.includes("câu 54") ? "Writing" : "Tổng hợp")); const isLocalStub = exam.external_key.startsWith("local-"); const open = () => { if (isLocalStub && skill === "Writing") onOpenWriting(); else if (isLocalStub && skill === "Reading") onOpenReading(); else void start(exam); }; return <article key={exam.external_key}><span className={exam.exam_type === "TOPIK I" ? styles.levelOne : styles.levelTwo}>{exam.exam_type}</span><h2>{exam.title}</h2><p>{exam.duration_minutes} phút · {skill}</p><div><small>{String(exam.metadata?.difficulty || "Thích ứng")}</small><b>{isLocalStub ? "Khung dữ liệu" : "Sẵn sàng"}</b></div><button disabled={starting !== null} onClick={open}>{starting === exam.external_key ? "Đang chuẩn bị..." : isLocalStub ? "Mở khung" : "Bắt đầu thi"} →</button></article>; })}</div></section>;
+  return <section className={styles.workspace}><ScreenIntro eyebrow="TOPIK PRACTICE" title="Kho đề luyện thi" description={`${visibleExams.length} bộ đề phù hợp với bộ lọc hiện tại.`} /><div className={styles.practiceModeSwitch}><button className={mode === "practice" ? styles.filterActive : ""} onClick={() => setMode("practice")}><b>Practice</b><span>Có transcript, dịch, tra từ và giảm tốc</span></button><button className={mode === "timed" ? styles.filterActive : ""} onClick={() => setMode("timed")}><b>Exam</b><span>Ẩn trợ giúp, tốc độ 1× và timer thật</span></button></div><div className={styles.practiceLibraryActions}><button onClick={onOpenBank}>▤ Mở ngân hàng câu hỏi</button><span>Lọc từng câu theo dạng, độ khó và kỹ năng</span></div><div className={styles.filterRow}>{["Tất cả", "TOPIK I", "TOPIK II", "Listening", "Reading", "Writing"].map((item) => <button key={item} className={filter === item ? styles.filterActive : ""} onClick={() => setFilter(item)}>{item}</button>)}</div><div className={styles.examLibrary}>{visibleExams.map((exam) => { const skill = String(exam.metadata?.skill || (exam.title.toLowerCase().includes("listening") ? "Listening" : exam.title.toLowerCase().includes("reading") ? "Reading" : exam.title.toLowerCase().includes("writing") || exam.title.includes("câu 54") ? "Writing" : "Tổng hợp")); const isLocalStub = exam.external_key.startsWith("local-"); const open = () => { if (isLocalStub && skill === "Writing") onOpenWriting(); else if (isLocalStub && skill === "Reading") onOpenReading(); else void start(exam); }; return <article key={exam.external_key}><span className={exam.exam_type === "TOPIK I" ? styles.levelOne : styles.levelTwo}>{exam.exam_type}</span><h2>{exam.title}</h2><p>{exam.duration_minutes} phút · {skill}</p><div><small>{String(exam.metadata?.difficulty || "Thích ứng")}</small><b>{isLocalStub ? "Khung dữ liệu" : mode === "practice" ? "Luyện có trợ giúp" : "Thi mô phỏng"}</b></div><button disabled={starting !== null} onClick={open}>{starting === exam.external_key ? "Đang chuẩn bị..." : isLocalStub ? "Mở khung" : mode === "practice" ? "Bắt đầu luyện" : "Bắt đầu thi"} →</button></article>; })}</div></section>;
 }
 
 function MistakesScreen({ goTo, fallbackMistakes, setNotice }: { goTo: (screen: Screen) => void; fallbackMistakes: ResultMistake[]; setNotice: (message: string) => void }) {
@@ -811,6 +1265,7 @@ export default function TopikMasterPage() {
   const [profile, setProfile] = useState<TopikMasterProfile>(defaultProfile);
   const [dashboard, setDashboard] = useState<DashboardData>(fallbackDashboard);
   const [practiceSession, setPracticeSession] = useState<PracticeSession>(() => localPracticeSession());
+  const [questionBankSection, setQuestionBankSection] = useState("Tất cả");
 
   useEffect(() => {
     let active = true;
@@ -835,10 +1290,15 @@ export default function TopikMasterPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const openQuestionBank = (section = "Tất cả") => {
+    setQuestionBankSection(section);
+    goTo("Ngân hàng câu hỏi");
+  };
+
   const isMobileActive = (screen: Screen) => {
     if (screen === "Home") return activeNav === "Home" || activeNav === "Dashboard";
-    if (screen === "Học tập") return activeNav === "Học tập" || activeNav === "Reading" || activeNav === "Vocabulary" || activeNav === "Grammar";
-    if (screen === "TOPIK Practice") return ["TOPIK Practice", "Làm bài", "Viết bài", "Kết quả"].includes(activeNav);
+    if (screen === "Học tập") return activeNav === "Học tập" || activeNav === "Reading" || activeNav === "Vocabulary" || activeNav === "Bộ từ cá nhân" || activeNav === "Grammar";
+    if (screen === "TOPIK Practice") return ["TOPIK Practice", "Ngân hàng câu hỏi", "Làm bài", "Viết bài", "Kết quả"].includes(activeNav);
     return activeNav === screen;
   };
 
@@ -852,23 +1312,23 @@ export default function TopikMasterPage() {
     goTo("Kết quả");
   };
 
-  const startPractice = async (examKey = "tm-original-diagnostic-listening-001") => {
+  const startPractice = async (examKey = "tm-original-diagnostic-listening-001", mode: "practice" | "timed" = "practice") => {
     try {
       const response = await apiFetch("/api/topik-master/practice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ examKey, mode: "practice" }),
+        body: JSON.stringify({ examKey, mode }),
       });
       const payload = await response.json();
       if (response.ok && payload.session?.questions?.length) {
         setPracticeSession(payload.session as PracticeSession);
-        setNotice("Phiên làm bài đã sẵn sàng và sẽ tự động lưu.");
+        setNotice(mode === "timed" ? "Chế độ Exam đã sẵn sàng: ẩn transcript, tốc độ 1×, tự nộp khi hết giờ." : "Chế độ Practice đã sẵn sàng với transcript, dịch và tra từ.");
       } else {
-        setPracticeSession(localPracticeSession());
+        setPracticeSession(localPracticeSession(mode));
         setNotice(payload.error ? `${payload.error} Đang mở bản local fallback.` : "Đang mở bản local fallback.");
       }
     } catch {
-      setPracticeSession(localPracticeSession());
+      setPracticeSession(localPracticeSession(mode));
       setNotice("Không thể nối Practice Engine; đang mở bản local fallback.");
     }
     goTo("Làm bài");
@@ -913,7 +1373,7 @@ export default function TopikMasterPage() {
               key={item.label}
               className={activeNav === item.label ? styles.activeNav : ""}
               aria-current={activeNav === item.label ? "page" : undefined}
-              onClick={() => goTo(item.label)}
+              onClick={() => item.label === "Ngân hàng câu hỏi" ? openQuestionBank() : goTo(item.label)}
             >
               <span>{item.icon}</span>{item.label}
             </button>
@@ -941,10 +1401,12 @@ export default function TopikMasterPage() {
           {activeNav === "Home" && <HomeScreen goTo={goTo} onStart={startPractice} />}
           {activeNav === "Dashboard" && <DashboardScreen goTo={goTo} notice={notice} setNotice={setNotice} dashboard={dashboard} profile={profile} />}
           {activeNav === "Học tập" && <StudyHub goTo={goTo} onStart={startPractice} />}
-          {activeNav === "Reading" && <ReadingHub goTo={goTo} />}
-          {activeNav === "Vocabulary" && <LearningCatalog kind="vocabulary" goTo={goTo} />}
-          {activeNav === "Grammar" && <LearningCatalog kind="grammar" goTo={goTo} />}
-          {activeNav === "TOPIK Practice" && <PracticeLibrary onStart={startPractice} onOpenReading={() => goTo("Reading")} onOpenWriting={() => goTo("Viết bài")} />}
+          {activeNav === "Reading" && <ReadingHub goTo={goTo} onOpenBank={() => openQuestionBank("Reading")} />}
+          {activeNav === "Vocabulary" && <LearningCatalog kind="vocabulary" goTo={goTo} setNotice={setNotice} />}
+          {activeNav === "Bộ từ cá nhân" && <PersonalCollectionsScreen goTo={goTo} setNotice={setNotice} />}
+          {activeNav === "Grammar" && <LearningCatalog kind="grammar" goTo={goTo} setNotice={setNotice} />}
+          {activeNav === "TOPIK Practice" && <PracticeLibrary onStart={startPractice} onOpenReading={() => goTo("Reading")} onOpenWriting={() => goTo("Viết bài")} onOpenBank={() => openQuestionBank()} />}
+          {activeNav === "Ngân hàng câu hỏi" && <QuestionBankScreen goTo={goTo} initialSection={questionBankSection} />}
           {activeNav === "Làm bài" && <ListeningScreen key={practiceSession.id} session={practiceSession} setNotice={setNotice} onComplete={completePractice} />}
           {activeNav === "Viết bài" && <ExamScreen setNotice={setNotice} />}
           {activeNav === "Kết quả" && <ResultsScreen goTo={goTo} result={lastResult} />}

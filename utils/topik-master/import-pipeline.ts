@@ -11,6 +11,8 @@ export type ValidatedImportItem = {
 
 const topikLevels = new Set(["TOPIK I", "TOPIK II"]);
 const skills = new Set(["listening", "reading", "writing", "vocabulary", "grammar"]);
+const sourceKinds = new Set(["original", "licensed", "user-generated", "ai-generated"]);
+const rightsStatuses = new Set(["original", "licensed", "public-link-only", "permission-required"]);
 
 function objectValue(value: unknown) {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -23,6 +25,11 @@ function text(value: unknown) {
 function integer(value: unknown, fallback: number) {
   const number = Number(value);
   return Number.isInteger(number) ? number : fallback;
+}
+
+function textArray(value: unknown, maximum = 100) {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(text).filter(Boolean))].slice(0, maximum);
 }
 
 function stableValue(value: unknown): unknown {
@@ -95,13 +102,19 @@ export function validateImportItem(entityType: ImportEntityType, input: unknown)
     return { externalKey: pattern, normalizedHash: hashPayload([entityType, pattern]), payload, errors };
   }
 
-  const externalKey = text(raw.externalKey || raw.external_key);
+  const externalKey = text(raw.externalKey || raw.external_key || raw.questionId || raw.question_id);
   const examType = text(raw.examType || raw.exam_type);
-  const skill = text(raw.skill);
-  const prompt = text(raw.prompt);
+  const skill = text(raw.skill || raw.section).toLowerCase();
+  const prompt = text(raw.prompt || raw.questionText || raw.question_text);
   const questionType = text(raw.questionType || raw.question_type);
   const options = Array.isArray(raw.options) ? raw.options.map(text).filter(Boolean) : [];
-  const correctAnswerIndex = raw.correctAnswerIndex === null || raw.correct_answer_index === null ? null : integer(raw.correctAnswerIndex ?? raw.correct_answer_index, -1);
+  const audioUrl = text(raw.audioUrl || raw.audio_url) || null;
+  const correctAnswerValue = raw.correctAnswerIndex ?? raw.correct_answer_index ?? raw.correctAnswer ?? raw.correct_answer;
+  const correctAnswerIndex = correctAnswerValue === null
+    ? null
+    : typeof correctAnswerValue === "string" && !/^\d+$/.test(correctAnswerValue.trim())
+      ? options.indexOf(text(correctAnswerValue))
+      : integer(correctAnswerValue, -1);
   required(errors, externalKey, "externalKey", 160);
   required(errors, prompt, "prompt");
   required(errors, questionType, "questionType", 80);
@@ -109,22 +122,48 @@ export function validateImportItem(entityType: ImportEntityType, input: unknown)
   if (!skills.has(skill)) errors.push("skill không hợp lệ.");
   if (questionType === "multiple-choice" && options.length < 2) errors.push("Câu trắc nghiệm cần ít nhất 2 lựa chọn.");
   if (correctAnswerIndex !== null && (correctAnswerIndex < 0 || correctAnswerIndex >= options.length)) errors.push("correctAnswerIndex nằm ngoài options.");
+  if (audioUrl && !/^https?:\/\//i.test(audioUrl)) errors.push("audioUrl phải dùng HTTP hoặc HTTPS.");
   const difficulty = integer(raw.difficulty, 1);
   if (difficulty < 1 || difficulty > 5) errors.push("difficulty phải từ 1 đến 5.");
+  const questionNumberValue = raw.questionNumber ?? raw.question_number;
+  const questionNumber = questionNumberValue == null ? null : integer(questionNumberValue, 0);
+  if (questionNumber !== null && questionNumber < 1) errors.push("questionNumber phải lớn hơn 0.");
+  const examYearValue = raw.examYear ?? raw.exam_year;
+  const examYear = examYearValue == null ? null : integer(examYearValue, 0);
+  if (examYear !== null && (examYear < 1997 || examYear > 2100)) errors.push("examYear không hợp lệ.");
+  const tags = textArray(raw.tags, 30);
+  if (tags.some((tag) => tag.length > 80)) errors.push("Mỗi tag tối đa 80 ký tự.");
+  const vocabulary = textArray(raw.vocabulary, 100);
+  const grammar = textArray(raw.grammar, 100);
+  const sourceKind = text(raw.sourceKind || raw.source_kind) || "licensed";
+  const rightsStatus = text(raw.rightsStatus || raw.rights_status) || (sourceKind === "original" || sourceKind === "user-generated" ? "original" : "licensed");
+  if (!sourceKinds.has(sourceKind)) errors.push("sourceKind không hợp lệ.");
+  if (!rightsStatuses.has(rightsStatus)) errors.push("rightsStatus không hợp lệ.");
+  if (rightsStatus === "public-link-only") errors.push("Nội dung public-link-only chỉ được lưu liên kết, không được import nguyên câu hỏi.");
   const payload = {
     externalKey,
     version: Math.max(1, integer(raw.version, 1)),
     examType,
     skill,
     subskill: text(raw.subskill) || "general",
+    questionNumber,
     questionType,
     prompt,
     passage: text(raw.passage) || null,
-    audioUrl: text(raw.audioUrl || raw.audio_url) || null,
+    audioUrl,
+    transcript: text(raw.transcript) || null,
     options,
     correctAnswerIndex,
     explanationVi: text(raw.explanationVi || raw.explanation_vi),
+    explanationKo: text(raw.explanationKo || raw.explanation_ko),
     difficulty,
+    tags,
+    examYear,
+    examRound: text(raw.examRound || raw.exam_round) || null,
+    vocabulary,
+    grammar,
+    sourceKind,
+    rightsStatus,
     metadata: objectValue(raw.metadata),
   };
   return { externalKey, normalizedHash: hashPayload([entityType, externalKey, payload.version]), payload, errors };

@@ -3,6 +3,14 @@ import { asObject, getTopikMasterContext } from "@/utils/topik-master/server";
 
 type Params = { params: Promise<{ batchId: string }> };
 
+function stringArray(value: unknown) {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item.trim())) : [];
+}
+
+function chunks<T>(items: T[], size = 100) {
+  return Array.from({ length: Math.ceil(items.length / size) }, (_, index) => items.slice(index * size, (index + 1) * size));
+}
+
 export async function GET(request: Request, contextParams: Params) {
   const context = await getTopikMasterContext(request);
   if (!context.ok) return context.response;
@@ -89,12 +97,84 @@ export async function PATCH(request: Request, contextParams: Params) {
   } else {
     committed = await context.supabase.from("topik_master_questions").upsert(approvedItems.data.map(({ payload }) => ({
       external_key: payload.externalKey, version: payload.version, exam_type: payload.examType, skill: payload.skill, subskill: payload.subskill,
-      question_type: payload.questionType, prompt: payload.prompt, passage: payload.passage, audio_url: payload.audioUrl, options: payload.options,
-      correct_answer_index: payload.correctAnswerIndex, explanation_vi: payload.explanationVi, difficulty: payload.difficulty, status: "draft",
-      source_kind: "licensed", source_ref: sourceRef, license_note: batchData.license_note, metadata: payload.metadata, updated_at: now,
-    })), { onConflict: "external_key", ignoreDuplicates: true });
+      question_number: payload.questionNumber, question_type: payload.questionType, prompt: payload.prompt, passage: payload.passage,
+      audio_url: payload.audioUrl, transcript: payload.transcript, options: payload.options, correct_answer_index: payload.correctAnswerIndex,
+      explanation_vi: payload.explanationVi, explanation_ko: payload.explanationKo, difficulty: payload.difficulty, tags: payload.tags,
+      exam_year: payload.examYear, exam_round: payload.examRound, status: "draft", source_kind: payload.sourceKind,
+      source_ref: sourceRef, source_url: batchData.source_url, license_note: batchData.license_note, rights_status: payload.rightsStatus,
+      metadata: payload.metadata, updated_at: now,
+    })), { onConflict: "external_key", ignoreDuplicates: false });
   }
   if (committed.error) return NextResponse.json({ ok: false, error: "Commit catalog thất bại; batch vẫn ở trạng thái review." }, { status: 500 });
+
+  let linkedVocabulary = 0;
+  let linkedGrammar = 0;
+  const unresolvedVocabulary = new Set<string>();
+  const unresolvedGrammar = new Set<string>();
+  if (batchData.entity_type === "question") {
+    const questionPayloads = approvedItems.data.map(({ payload }) => payload);
+    const externalKeys = [...new Set(questionPayloads.map((payload) => String(payload.externalKey || "")).filter(Boolean))];
+    const vocabularyRefs = [...new Set(questionPayloads.flatMap((payload) => stringArray(payload.vocabulary)).map((item) => item.normalize("NFC").trim().toLocaleLowerCase("ko-KR")))];
+    const grammarRefs = [...new Set(questionPayloads.flatMap((payload) => stringArray(payload.grammar)).map((item) => item.normalize("NFC").trim()))];
+    const questionRows: Array<{ id: string; external_key: string }> = [];
+    const vocabularyRows: Array<{ id: string; normalized_lemma: string }> = [];
+    const grammarRows: Array<{ id: string; pattern: string }> = [];
+
+    for (const group of chunks(externalKeys)) {
+      const result = await context.supabase.from("topik_master_questions").select("id,external_key").in("external_key", group);
+      if (!result.error) questionRows.push(...(result.data || []));
+    }
+    for (const group of chunks(vocabularyRefs)) {
+      const result = await context.supabase.from("topik_master_vocabulary").select("id,normalized_lemma,frequency_score").in("normalized_lemma", group).order("frequency_score", { ascending: false });
+      if (!result.error) vocabularyRows.push(...(result.data || []));
+    }
+    for (const group of chunks(grammarRefs)) {
+      const result = await context.supabase.from("topik_master_grammar").select("id,pattern").in("pattern", group);
+      if (!result.error) grammarRows.push(...(result.data || []));
+    }
+
+    const questionByKey = new Map(questionRows.map((row) => [row.external_key, row.id]));
+    const vocabularyByLemma = new Map<string, string>();
+    vocabularyRows.forEach((row) => { if (!vocabularyByLemma.has(row.normalized_lemma)) vocabularyByLemma.set(row.normalized_lemma, row.id); });
+    const grammarByPattern = new Map(grammarRows.map((row) => [row.pattern, row.id]));
+    const vocabularyLinks: Array<{ question_id: string; vocabulary_id: string; relevance: number }> = [];
+    const grammarLinks: Array<{ question_id: string; grammar_id: string; relevance: number }> = [];
+
+    questionPayloads.forEach((payload) => {
+      const questionId = questionByKey.get(String(payload.externalKey || ""));
+      if (!questionId) return;
+      stringArray(payload.vocabulary).forEach((reference) => {
+        const normalized = reference.normalize("NFC").trim().toLocaleLowerCase("ko-KR");
+        const vocabularyId = vocabularyByLemma.get(normalized);
+        if (vocabularyId) vocabularyLinks.push({ question_id: questionId, vocabulary_id: vocabularyId, relevance: 1 });
+        else unresolvedVocabulary.add(reference);
+      });
+      stringArray(payload.grammar).forEach((reference) => {
+        const grammarId = grammarByPattern.get(reference.normalize("NFC").trim());
+        if (grammarId) grammarLinks.push({ question_id: questionId, grammar_id: grammarId, relevance: 1 });
+        else unresolvedGrammar.add(reference);
+      });
+    });
+
+    if (vocabularyLinks.length) {
+      const linked = await context.supabase.from("topik_master_question_vocabulary").upsert(vocabularyLinks, { onConflict: "question_id,vocabulary_id", ignoreDuplicates: true });
+      if (!linked.error) linkedVocabulary = vocabularyLinks.length;
+    }
+    if (grammarLinks.length) {
+      const linked = await context.supabase.from("topik_master_question_grammar").upsert(grammarLinks, { onConflict: "question_id,grammar_id", ignoreDuplicates: true });
+      if (!linked.error) linkedGrammar = grammarLinks.length;
+    }
+  }
   await context.supabase.from("topik_master_import_batches").update({ status: "committed", approved_count: approvedItems.data.length, committed_at: now, updated_at: now }).eq("id", batchId).eq("user_id", context.user.id);
-  return NextResponse.json({ ok: true, committed: approvedItems.data.length, publishState: "draft" });
+  return NextResponse.json({
+    ok: true,
+    committed: approvedItems.data.length,
+    publishState: "draft",
+    links: {
+      vocabulary: linkedVocabulary,
+      grammar: linkedGrammar,
+      unresolvedVocabulary: [...unresolvedVocabulary],
+      unresolvedGrammar: [...unresolvedGrammar],
+    },
+  });
 }

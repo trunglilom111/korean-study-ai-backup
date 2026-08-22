@@ -50,7 +50,7 @@ export async function POST(request: Request) {
 
   const existing = await context.supabase
     .from("topik_master_practice_sessions")
-    .select("id")
+    .select("id,mode")
     .eq("user_id", context.user.id)
     .eq("exam_id", examResult.data.id)
     .in("status", ["active", "submitting"])
@@ -63,6 +63,15 @@ export async function POST(request: Request) {
   }
 
   let sessionId = existing.data?.id;
+  if (existing.data && existing.data.mode !== mode) {
+    const abandoned = await context.supabase
+      .from("topik_master_practice_sessions")
+      .update({ status: "abandoned", updated_at: new Date().toISOString() })
+      .eq("id", existing.data.id)
+      .eq("user_id", context.user.id);
+    if (abandoned.error) return NextResponse.json({ ok: false, error: "Không thể đổi chế độ làm bài." }, { status: 500 });
+    sessionId = undefined;
+  }
   if (!sessionId) {
     const countResult = await context.supabase
       .from("topik_master_exam_questions")
@@ -94,5 +103,5 @@ export async function POST(request: Request) {
   if (loaded.error || !loaded.session) {
     return NextResponse.json({ ok: false, error: "Không thể tải nội dung bộ đề." }, { status: 500 });
   }
-  return NextResponse.json({ ok: true, session: loaded.session }, { status: existing.data ? 200 : 201 });
+  return NextResponse.json({ ok: true, session: loaded.session }, { status: sessionId === existing.data?.id ? 200 : 201 });
 }

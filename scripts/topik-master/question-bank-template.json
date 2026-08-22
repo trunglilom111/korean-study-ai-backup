@@ -1,0 +1,32 @@
+{
+  "entityType": "question",
+  "sourceName": "Replace with the licensed source name",
+  "sourceUrl": "https://example.com/source",
+  "licenseNote": "Replace with evidence describing the right to store and use this content.",
+  "items": [
+    {
+      "question_id": "licensed-topik-i-reading-001",
+      "exam_type": "TOPIK I",
+      "section": "reading",
+      "question_number": 1,
+      "question_type": "main-idea",
+      "difficulty": 2,
+      "question_text": "중심 생각을 고르십시오.",
+      "passage": "Replace with licensed question content.",
+      "options": ["선택지 1", "선택지 2", "선택지 3", "선택지 4"],
+      "correct_answer": 0,
+      "audio_url": null,
+      "transcript": null,
+      "explanation_vi": "Giải thích bằng tiếng Việt.",
+      "explanation_ko": "한국어 해설.",
+      "vocabulary": [],
+      "grammar": [],
+      "tags": ["reading", "main-idea"],
+      "exam_year": null,
+      "exam_round": null,
+      "source_kind": "licensed",
+      "rights_status": "licensed",
+      "metadata": {}
+    }
+  ]
+}
